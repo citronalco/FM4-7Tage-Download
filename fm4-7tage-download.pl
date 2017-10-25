@@ -38,34 +38,34 @@ foreach (@{$result->{'hits'}}) {
     $browser->get($_->{'data'}->{'href'});
     my $data=JSON->new()->utf8->decode($browser->content());
     my $title=$data->{'title'};
-    next unless $title=~/$SENDUNG/i;	# Filter out results not containing the query string
+    next unless $title=~/$SENDUNG/i;	# Filter out results not containing the query string in the title
     my $broadcastDate=POSIX::strftime("%Y-%m-%d",localtime($data->{'start'}/1000));
     my $description=$removeHtml->parse(($data->{'description'}) or $broadcastDate);
 
-    my @streams=(sort { $a->{'start'} cmp $b->{'start'}} @{$data->{'streams'}});	# for multi-part shows sort them by start time...
-    for (my $i=0; $i<@streams; $i++) {
-	my $tagTitle="FM4 ".$title." ".$broadcastDate;
-	$tagTitle.=" [".($i+1)."/".@streams."]" if @streams>1;	# ...and add "[currentPartNo/totalParts]" to title
-	print $tagTitle;
+    my @parts=(sort { $a->{'start'} cmp $b->{'start'}} @{$data->{'streams'}});	# for multi-part shows sort them by start time...
+    for (my $i=0; $i<@parts; $i++) {
 
-	my $filename=$tagTitle.".mp3";
-	$filename=~s/[^\w\s\-\.]/_/g;
+	my $tagTitle=$title." ".$broadcastDate;
+	$tagTitle.=" [".($i+1)."/".@parts."]" if @parts>1;	# ...and add "[currentPartNo/totalParts]" to title
+
+	my $filename="FM4 ".$tagTitle.".mp3";
+	$filename=~s/[^\w\s\-\.\[\]]/_/g;
 	if (-f $DESTDIR."/".$filename) {
-	    print " already exists, skipping.\n";
+	    print $filename." already exists, skipping.\n";
 	    next;
 	}
 
-	print " downloading...";
-	$browser->get($shoutcastBaseUrl.$streams[$i]->{'loopStreamId'});
+	print $filename." downloading... ";
+	$browser->get($shoutcastBaseUrl.$parts[$i]->{'loopStreamId'});
 	$browser->save_content($DESTDIR."/".$filename);
 	
 	my $tag=MP3::Tag->new($DESTDIR."/".$filename);
 	$tag->get_tags;
 	$tag->new_tag("ID3v2") unless (exists $tag->{ID3v2});
 	$tag->{ID3v2}->artist("FM4");
-	$tag->{ID3v2}->title($title);
+	$tag->{ID3v2}->title($tagTitle);
 	$tag->{ID3v2}->comment($description);
 	$tag->{ID3v2}->write_tag;
-	print " done.\n";
+	print "done.\n";
     }
 }
