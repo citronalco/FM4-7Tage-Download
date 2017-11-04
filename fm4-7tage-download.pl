@@ -56,7 +56,15 @@ foreach (@{$result->{'hits'}}) {
 	}
 
 	print $filename." downloading... ";
-	$browser->get($shoutcastBaseUrl.$parts[$i]->{'loopStreamId'});
+	my $try=5;
+	do {
+	    $browser->get($shoutcastBaseUrl.$parts[$i]->{'loopStreamId'});
+	} while (--$try>0 and !$browser->success());
+	if ($try==0) {
+	    print "failed.\n";
+	    next;
+	}
+	
 	$browser->save_content($DESTDIR."/".$filename);
 	
 	my $tag=MP3::Tag->new($DESTDIR."/".$filename);
