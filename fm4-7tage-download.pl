@@ -37,7 +37,7 @@ my $result=JSON->new()->utf8->decode($browser->content());
 foreach (@{$result->{'hits'}}) {
     $browser->get($_->{'data'}->{'href'});
     my $data=JSON->new()->utf8->decode($browser->content());
-    my $title=$data->{'title'};
+    my ($title)=$data->{'title'}=~/^\s*(.+?)\s*$/;
     next unless $title=~/$SENDUNG/i;	# Filter out results not containing the query string in the title
     my $broadcastDate=POSIX::strftime("%Y-%m-%d",localtime($data->{'start'}/1000));
     my $description=$removeHtml->parse(($data->{'description'}) or $broadcastDate);
