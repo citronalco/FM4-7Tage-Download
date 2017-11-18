@@ -50,23 +50,41 @@ foreach (@{$result->{'hits'}}) {
 
 	my $filename="FM4 ".$tagTitle.".mp3";
 	$filename=~s/[^\w\s\-\.\[\]]/_/g;
+
 	if (-f $DESTDIR."/".$filename) {
 	    print $filename." already exists, skipping.\n";
 	    next;
 	}
 
 	print $filename." downloading... ";
-	my $try=5;
-	do {
-	    $browser->get($shoutcastBaseUrl.$parts[$i]->{'loopStreamId'});
-	} while (--$try>0 and !$browser->success());
-	if ($try==0) {
+	my ($tries,@parameters,$FD);
+	$tries=4;
+	@parameters=(
+	    $shoutcastBaseUrl.$parts[$i]->{'loopStreamId'},	# URL
+	    ":content_cb" => sub {
+		my ($chunk) = @_;
+		print $FD $chunk;
+	    });
+	while ($tries) {
+	    open($FD,">>".$DESTDIR."/".$filename.".part");
+
+	    my $bytes=-s $DESTDIR."/".$filename.".part";
+	    if ($bytes > 0) {
+		push(@parameters,"Range"=>"bytes=".$bytes."-");
+	    }
+	    my $result=$browser->get(@parameters);
+	    close $FD;
+
+	    last if ($result->is_success or $result->code == 416);
+	    $tries--;
+	}
+	if ($tries eq 0) {
 	    print "failed.\n";
 	    next;
 	}
-	
-	$browser->save_content($DESTDIR."/".$filename);
-	
+
+	rename $DESTDIR."/".$filename.".part",$DESTDIR."/".$filename;
+
 	my $tag=MP3::Tag->new($DESTDIR."/".$filename);
 	$tag->get_tags;
 	$tag->new_tag("ID3v2") unless (exists $tag->{ID3v2});
