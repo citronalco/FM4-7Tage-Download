@@ -52,7 +52,8 @@ foreach (@{$result->{'hits'}}) {
 	my $filename="FM4 ".$tagTitle.".mp3";
 	$filename=~s/[^\w\s\-\.\[\]]/_/g;
 
-	if (-f File::Spec->join($DESTDIR,$filename)) {
+	my $file=File::Spec->join($DESTDIR,$filename);
+	if (-f $file) {
 	    print $filename." already exists, skipping.\n";
 	    next;
 	}
@@ -67,9 +68,9 @@ foreach (@{$result->{'hits'}}) {
 		print $FD $chunk;
 	    });
 	while ($tries) {
-	    open($FD,">>".File::Spec->join($DESTDIR, $filename.".part"));
+	    open($FD,">>".$file.".part");
 
-	    my $bytes=-s File::Spec->join($DESTDIR, $filename.".part");
+	    my $bytes=-s $file.".part";
 	    if ($bytes > 0) {
 		push(@parameters,"Range"=>"bytes=".$bytes."-");
 	    }
@@ -84,9 +85,9 @@ foreach (@{$result->{'hits'}}) {
 	    next;
 	}
 
-	rename(File::Spec->join($DESTDIR,$filename.".part"),File::Spec->join($DESTDIR,$filename));
+	rename($file.".part",$file);
 
-	my $tag=MP3::Tag->new(File::Spec->join($DESTDIR,$filename));
+	my $tag=MP3::Tag->new($file);
 	$tag->get_tags;
 	$tag->new_tag("ID3v2") unless (exists $tag->{ID3v2});
 	$tag->{ID3v2}->artist("FM4");
