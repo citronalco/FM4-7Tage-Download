@@ -7,6 +7,7 @@ use URI::Encode;
 use JSON;
 use POSIX;
 use HTML::Strip;
+use File::Spec;
 use MP3::Tag;
 MP3::Tag->config(write_v24=>1);
 use Unicode::String qw(utf8 latin1);
@@ -51,7 +52,7 @@ foreach (@{$result->{'hits'}}) {
 	my $filename="FM4 ".$tagTitle.".mp3";
 	$filename=~s/[^\w\s\-\.\[\]]/_/g;
 
-	if (-f $DESTDIR."/".$filename) {
+	if (-f File::Spec->join($DESTDIR,$filename)) {
 	    print $filename." already exists, skipping.\n";
 	    next;
 	}
@@ -66,9 +67,9 @@ foreach (@{$result->{'hits'}}) {
 		print $FD $chunk;
 	    });
 	while ($tries) {
-	    open($FD,">>".$DESTDIR."/".$filename.".part");
+	    open($FD,">>".File::Spec->join($DESTDIR, $filename.".part"));
 
-	    my $bytes=-s $DESTDIR."/".$filename.".part";
+	    my $bytes=-s File::Spec->join($DESTDIR, $filename.".part");
 	    if ($bytes > 0) {
 		push(@parameters,"Range"=>"bytes=".$bytes."-");
 	    }
@@ -83,9 +84,9 @@ foreach (@{$result->{'hits'}}) {
 	    next;
 	}
 
-	rename $DESTDIR."/".$filename.".part",$DESTDIR."/".$filename;
+	rename(File::Spec->join($DESTDIR,$filename.".part"),File::Spec->join($DESTDIR,$filename));
 
-	my $tag=MP3::Tag->new($DESTDIR."/".$filename);
+	my $tag=MP3::Tag->new(File::Spec->join($DESTDIR,$filename));
 	$tag->get_tags;
 	$tag->new_tag("ID3v2") unless (exists $tag->{ID3v2});
 	$tag->{ID3v2}->artist("FM4");
