@@ -40,10 +40,10 @@ foreach (@{$result->{'hits'}}) {
     my $data=JSON->new()->utf8->decode($browser->content());
     my ($title)=$data->{'title'}=~/^\s*(.+?)\s*$/;
     next unless $title=~/$SENDUNG/i;	# Filter out results not containing the query string in the title
-    my $broadcastDate=POSIX::strftime("%Y-%m-%d",localtime($data->{'start'}/1000));
+    my $broadcastDate=POSIX::strftime("%Y-%m-%d %H:%M",localtime($data->{'start'}/1000));
     my $description=$removeHtml->parse(($data->{'description'}) or $broadcastDate);
 
-    my @parts=(sort { $a->{'start'} cmp $b->{'start'}} @{$data->{'streams'}});	# for multi-part shows sort them by start time...
+    my @parts=(sort { $a->{'start'} cmp $b->{'start'}} @{$data->{'streams'}});	# for multi-part shows (e.g. "Morning Show") sort them by start time...
     for (my $i=0; $i<@parts; $i++) {
 
 	my $tagTitle=$title." ".$broadcastDate;
