@@ -45,12 +45,12 @@ foreach (@{$result->{'hits'}}) {
 
     my @parts=(sort { $a->{'start'} cmp $b->{'start'}} @{$data->{'streams'}});	# for multi-part shows (e.g. "Morning Show") sort them by start time...
     for (my $i=0; $i<@parts; $i++) {
-
 	my $tagTitle=$title." ".$broadcastDate;
 	$tagTitle.=" [".($i+1)."/".@parts."]" if @parts>1;	# ...and add "[currentPartNo/totalParts]" to title
 
-	my $filename="FM4 ".$tagTitle.".mp3";
+	my $filename=$tagTitle.".mp3";
 	$filename=~s/[^\w\s\-\.\[\]]/_/g;
+	$filename="FM4 ".$filename unless $filename=~/^FM4/;
 
 	my $file=File::Spec->join($DESTDIR,$filename);
 	if (-f $file) {
