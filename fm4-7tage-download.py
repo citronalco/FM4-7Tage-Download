@@ -178,11 +178,21 @@ for hit in result['hits']:
                         if item[key] is not None:
                             chapterTitle.append(strip_html(item[key]))
 
+                # For multipart shows sometimes chapters start in the previous part
+                # As in ID3 chapter start times must not be negative set chapter start to 0 in that case
+                chapterStart = item['start'] - broadcastJson['streams'][streamNr]['start']
+                if chapterStart < 0:
+                    chapterStart = 0
+
+                chapterEnd = item['end'] - broadcastJson['streams'][streamNr]['start']	# FIXME: chapters (and shows?) seem to be 1s too long
+                if chapterEnd > broadcastJson['streams'][streamNr]['end'] - broadcastJson['streams'][streamNr]['start']:
+                    chapterEnd = broadcastJson['streams'][streamNr]['end'] - broadcastJson['streams'][streamNr]['start']
+
                 chapters.append({
                     "id": "ch"+str(chapterNr),
                     "title": " / ".join(chapterTitle),
-                    "startTime": item['start']-broadcastJson['streams'][streamNr]['start'],
-                    "endTime": item['end']-broadcastJson['streams'][streamNr]['start']	# FIXME: chapters (and shows?) seem to be 1s too long
+                    "startTime": chapterStart,
+                    "endTime": chapterEnd,
                 })
 
         for c in chapters:
@@ -192,7 +202,6 @@ for hit in result['hits']:
                 end_time = c["endTime"],
                 sub_frames = [TIT2(text=[c["title"]])]
             ))
-
 
         tocList = ",".join([ c["id"] for c in chapters ])
         tags.add(CTOC(
@@ -212,7 +221,6 @@ for hit in result['hits']:
                     break
             except:
                 continue
-
 
         # save ID3 tags
         tags.save(filepath+".part",v2_version=3)

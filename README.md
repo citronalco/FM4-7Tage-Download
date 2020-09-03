@@ -1,4 +1,4 @@
-# FM4 7-Tage Backup
+# FM4 7-Tage Download
 The Austrian radio station FM4 publishes MP3 recordings of all of their shows during the last 7 days on its website.
 
 This Python 3 script is a simple command line tool to download all currently available recordings for a specific show.
