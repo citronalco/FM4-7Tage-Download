@@ -275,4 +275,6 @@ for hit in result['hits']:
 
         # done
         os.rename(showInfo['filepath']+".part", showInfo['filepath'])
+        os.chmod(showInfo['filepath'], 0o644)
+
         print("done.", flush=True)
