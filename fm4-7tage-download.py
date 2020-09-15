@@ -38,8 +38,8 @@ def strip_html(text: str):
     if text is None:
         return None
 
-    # add a comma after <br/>
-    text = re.sub('(<br/?>)', r'\1, ', text, flags=re.IGNORECASE)
+    # add a | after <br/>
+    text = re.sub('(<br/?>)', r'\1 | ', text, flags=re.IGNORECASE)
 
     # add a | between </p></p>
     text = re.sub('\s*(</p>)\s*(<p>)\s*', r'\1 | \2 ', text, flags=re.IGNORECASE)
