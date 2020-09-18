@@ -156,8 +156,8 @@ for hit in result['hits']:
     for streamPartNr in range(0, len(streamParts)):
         partInfo = {
             'url': broadcastJson['streams'][streamPartNr]['loopStreamId'],
-            'start_at_ms': broadcastJson['streams'][streamPartNr]['start'],
-            'end_at_ms': broadcastJson['streams'][streamPartNr]['end'],
+            'start_ts': broadcastJson['streams'][streamPartNr]['start'],
+            'end_ts': broadcastJson['streams'][streamPartNr]['end'],
             'duration_ms': broadcastJson['streams'][streamPartNr]['end'] - broadcastJson['streams'][streamPartNr]['start'],
             'title': None,
             'filename': None,
@@ -201,9 +201,9 @@ for hit in result['hits']:
         for item in sorted(broadcastJson['items'], key=lambda x: x['start']):
             if item['entity'] == "BroadcastItem":
                 # skip items that end too early or start too soon for the current stream part
-                if item['end'] <= partInfo['start_at_ms']:
+                if item['end'] <= partInfo['start_ts']:
                     continue
-                if item['start'] >= partInfo['end_at_ms']:
+                if item['start'] >= partInfo['end_ts']:
                     break
 
                 chapterNr+=1
@@ -225,11 +225,11 @@ for hit in result['hits']:
 
                 # for multipart shows sometimes chapters start in the previous part, so the start time is negative
                 # In ID3 chapter start times must be >=0, so we set chapter start to 0 in that case
-                chapterInfo['start_ms'] = item['start'] - partInfo['start_at_ms']
+                chapterInfo['start_ms'] = item['start'] - partInfo['start_ts']
                 if chapterInfo['start_ms'] < 0:
                     chapterInfo['start_ms'] = 0
 
-                chapterInfo['end_ms'] = item['end'] - partInfo['start_at_ms']	# FIXME: chapters (and shows?) seem to be 1s too long
+                chapterInfo['end_ms'] = item['end'] - partInfo['start_ts']	# FIXME: chapters (and shows?) seem to be 1s too long
                 if chapterInfo['end_ms'] > partInfo['duration_ms']:
                     chapterInfo['end_ms'] = partInfo['duration_ms']
 
@@ -237,8 +237,10 @@ for hit in result['hits']:
 
 
         showInfo['parts'].append(partInfo)
-        print(showInfo['parts'])
 
+
+
+    if not createSingleFile == True and not len(showInfo['parts'])<=1:
         # set ID3 tags
         try:
             tags = ID3(partInfo['filepath']+".part")
@@ -276,6 +278,7 @@ for hit in result['hits']:
             sub_frames = [TIT2(text=["Table Of Contents"])]
         ))
 
+
         if showInfo['image_mime'] is not None and showInfo['image_data'] is not None:
             tags.add(APIC(mime=showInfo['image_mime'], desc="Front Cover", data=showInfo['image_data']))
 
@@ -291,14 +294,14 @@ for hit in result['hits']:
         print("done.", flush=True)
 
 
-    if createSingleFile == True and len(showInfo['parts']>1):
+    else:
         singleFile = {
             'title': None,
             'filename': None,
             'filepath': None,
             'start_ts': broadcastJson['streams'][0]['start'],
             'end_ts': broadcastJson['streams'][len(streamParts)-1]['end'],
-            'duration_ms': sum(list(part['end_ts'] - part['start_ts'] for parts in showInfo)),
+            'duration_ms': sum(list(part['end_ts'] - part['start_ts'] for part in showInfo['parts'])),
             'title': showInfo['start_dt'].strftime("%Y-%m-%d %H:%M"),
             'chapters': [],
         }
@@ -307,7 +310,7 @@ for hit in result['hits']:
         singleFile['title'] = showInfo['start_dt'].strftime("%Y-%m-%d %H:%M")
 
         # filename
-        singleFile['filename'] = re.sub('[^\w\s\-\.\[\]]','_', showInfo['name'] + " " + title)
+        singleFile['filename'] = re.sub('[^\w\s\-\.\[\]]','_', showInfo['name'] + " " + singleFile['title'])
         # prepend station name to filename
         match = re.search('^'+stationInfo['name']+' ', singleFile['filename'])
         if not match:
@@ -318,30 +321,30 @@ for hit in result['hits']:
         singleFile['filepath'] = os.path.join(DESTDIR, singleFile['filename'])
 
         # concat parts (pydub creates a wav file and re-encodes it afterwards...)
-        showAudio = sum( (AudioSegment.from_mp3(part['filepath']) for part in showInfo['parts']) )
+        showAudio = sum( (AudioSegment.from_mp3(part['filepath']+".part") for part in showInfo['parts']) )
         showAudio.export(singleFile['filepath']+'.part', format="mp3")
 
         # remove part files
         for part in showInfo['parts']:
-            os.remove(part['filepath'])
+            os.remove(part['filepath']+".part")
 
         # recalculate chapter marks under consideration of gaps
-        prevPartEnd_ts = showInfo['parts'][0]['start_dt']
+        prevPartEnd_ts = showInfo['parts'][0]['start_ts']
         gap_ms = 0
         chapterNr = 0
-        for parts in showInfo:
-            gap_ms += prevPartEnd_ts - part['start_ts']
-            for chapter in chapters:
+        for part in sorted(showInfo['parts'], key=lambda x: x['start_ts']):
+            gap_ms += part['start_ts'] - prevPartEnd_ts
+            for chapter in part['chapters']:
                 chapterNr += 1
                 newChapterInfo = {
                     "id": "ch" + str(chapterNr),
-                    "title": chapter['title'], 
-                    "start_ms": chapter['start_ms'] + gap_ms, 
+                    "title": chapter['title'],
+                    "start_ms": chapter['start_ms'] + gap_ms,
                     "end_ms": chapter['end_ms'] + gap_ms,
                 }
+                singleFile['chapters'].append(newChapterInfo)
             prevPartEnd_ts = part['end_ts']
 
-        singleFile['chapters'].append(newChapterInfo)
 
         # set ID3 tags
         try:
