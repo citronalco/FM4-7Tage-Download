@@ -77,7 +77,7 @@ def download(url: str, file_path: str, attempts=4):
                 return True	# success
         except Exception as ex:
                 return False
-    return None
+    return False
 
 
 # search for show
