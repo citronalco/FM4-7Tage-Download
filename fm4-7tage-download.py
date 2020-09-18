@@ -16,8 +16,16 @@ import re
 from datetime import datetime
 from mutagen.id3 import ID3,ID3NoHeaderError,TRSN,TPE1,TALB,TRCK,TIT2,COMM,TYER,TDAT,TIME,TLEN,TDRL,CTOC,CHAP,WOAS,WORS,APIC,CTOCFlags
 
+try:
+    from pydub import AudioSegment
+    createSingleFile = True
+except ImportError:
+    createSingleFile = False
+
+
 searchUrl = "https://audioapi.orf.at/fm4/api/json/current/search?q=%s";
 shoutcastBaseUrl = "http://loopstream01.apa.at/?channel=fm4&id=%s";
+
 
 if len(sys.argv) != 3:
     print("Usage:", file=sys.stderr)
@@ -64,14 +72,14 @@ def strip_html(text: str):
     return out
 
 # download in chunks
-def download(url: str, file_path: str, attempts=4):
+def download(url: str, filepath: str, attempts=4):
     for attempt in range(1, attempts+1):
         try:
             if attempt > 1:
                 time.sleep(3)  # wait 3 seconds between download attempts
             with requests.get(url, stream=True) as response:
                 response.raise_for_status()
-                with open(file_path, 'wb') as out_file:
+                with open(filepath, 'wb') as out_file:
                     for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
                         out_file.write(chunk)
                 return True	# success
@@ -107,6 +115,7 @@ for hit in result['hits']:
         'website': None,
         'image_data': None,
         'image_mime': None,
+        'parts': [],
     }
 
     # extract show name. skip if result does not contain the show's name in the title
@@ -224,9 +233,11 @@ for hit in result['hits']:
                 if chapterInfo['end_ms'] > partInfo['duration_ms']:
                     chapterInfo['end_ms'] = partInfo['duration_ms']
 
-
                 partInfo['chapters'].append(chapterInfo)
 
+
+        showInfo['parts'].append(partInfo)
+        print(showInfo['parts'])
 
         # set ID3 tags
         try:
@@ -278,3 +289,108 @@ for hit in result['hits']:
         os.chmod(partInfo['filepath'], 0o644)
 
         print("done.", flush=True)
+
+
+    if createSingleFile == True and len(showInfo['parts']>1):
+        singleFile = {
+            'title': None,
+            'filename': None,
+            'filepath': None,
+            'start_ts': broadcastJson['streams'][0]['start'],
+            'end_ts': broadcastJson['streams'][len(streamParts)-1]['end'],
+            'duration_ms': sum(list(part['end_ts'] - part['start_ts'] for parts in showInfo)),
+            'title': showInfo['start_dt'].strftime("%Y-%m-%d %H:%M"),
+            'chapters': [],
+        }
+
+        # title
+        singleFile['title'] = showInfo['start_dt'].strftime("%Y-%m-%d %H:%M")
+
+        # filename
+        singleFile['filename'] = re.sub('[^\w\s\-\.\[\]]','_', showInfo['name'] + " " + title)
+        # prepend station name to filename
+        match = re.search('^'+stationInfo['name']+' ', singleFile['filename'])
+        if not match:
+            singleFile['filename'] = stationInfo['name'] + ' ' + singleFile['filename']
+        singleFile['filename'] += ".mp3"
+
+        # filepath
+        singleFile['filepath'] = os.path.join(DESTDIR, singleFile['filename'])
+
+        # concat parts (pydub creates a wav file and re-encodes it afterwards...)
+        showAudio = sum( (AudioSegment.from_mp3(part['filepath']) for part in showInfo['parts']) )
+        showAudio.export(singleFile['filepath']+'.part', format="mp3")
+
+        # remove part files
+        for part in showInfo['parts']:
+            os.remove(part['filepath'])
+
+        # recalculate chapter marks under consideration of gaps
+        prevPartEnd_ts = showInfo['parts'][0]['start_dt']
+        gap_ms = 0
+        chapterNr = 0
+        for parts in showInfo:
+            gap_ms += prevPartEnd_ts - part['start_ts']
+            for chapter in chapters:
+                chapterNr += 1
+                newChapterInfo = {
+                    "id": "ch" + str(chapterNr),
+                    "title": chapter['title'], 
+                    "start_ms": chapter['start_ms'] + gap_ms, 
+                    "end_ms": chapter['end_ms'] + gap_ms,
+                }
+            prevPartEnd_ts = part['end_ts']
+
+        singleFile['chapters'].append(newChapterInfo)
+
+        # set ID3 tags
+        try:
+            tags = ID3(singleFile['filepath']+".part")
+            tags.delete()
+        except ID3NoHeaderError:
+            tags = ID3()
+
+        tags.add(TRSN(text=[stationInfo['name']]))
+        tags.add(TPE1(text=[stationInfo['name']]))
+        tags.add(TALB(text=[showInfo['name']]))
+        tags.add(TRCK(text=["1/1"]))
+        tags.add(TIT2(text=[singleFile['title']]))
+        tags.add(COMM(lang="deu", desc="desc", text=[showInfo['description']]))
+        tags.add(TYER(text=[showInfo['start_dt'].strftime("%Y")]))
+        tags.add(TDAT(text=[showInfo['start_dt'].strftime("%d%m")]))
+        tags.add(TIME(text=[showInfo['start_dt'].strftime("%H%M")]))
+        tags.add(TLEN(text=[singleFile['duration_ms']]))
+        tags.add(WOAS(url=showInfo['website']))
+        tags.add(WORS(url=stationInfo['website']))
+
+
+        for chapter in singleFile['chapters']:
+            tags.add(CHAP(
+                element_id = chapter["id"],
+                start_time = chapter["start_ms"],
+                end_time = chapter["end_ms"],
+                sub_frames = [TIT2(text=[chapter["title"]])]
+            ))
+
+        tocList = ",".join([ chapter["id"] for chapter in singleFile['chapters'] ])
+        tags.add(CTOC(
+            element_id = "toc",
+            flags = CTOCFlags.TOP_LEVEL | CTOCFlags.ORDERED,
+            child_element_ids = [tocList],
+            sub_frames = [TIT2(text=["Table Of Contents"])]
+        ))
+
+        if showInfo['image_mime'] is not None and showInfo['image_data'] is not None:
+            tags.add(APIC(mime=showInfo['image_mime'], desc="Front Cover", data=showInfo['image_data']))
+
+
+        # save ID3 tags
+        tags.save(singleFile['filepath']+".part",v2_version=3)
+
+
+        # done
+        os.rename(singleFile['filepath']+".part", singleFile['filepath'])
+        os.chmod(singleFile['filepath'], 0o644)
+
+        print("done.", flush=True)
+
