@@ -4,8 +4,8 @@ The Austrian radio station FM4 publishes MP3 recordings of all of their shows du
 This Python 3 script is a simple command line tool to download all currently available recordings for a specific show.
 
 ### Requirements
-Python 3 with modules "mutagen", "urllib3" and "requests".
-(On Debian/Ubuntu: `sudo apt install python3 python3-mutagen python3-urllib3 python3-requests`)
+Python 3 with modules "mutagen", "requests" and optionally "pydub".
+(On Debian/Ubuntu/Mint: `sudo apt install python3 python3-mutagen python3-requests pydub`)
 
 ### Usage
 ```./fm4-7tage-download.py <ShowTitle> <TargetDirectory>```
@@ -13,9 +13,11 @@ Python 3 with modules "mutagen", "urllib3" and "requests".
 The script searches in FM4's 7-Tage-Player API for shows with a matching name and downloads them into the given target directory.
 Files aready present get skipped, so it is well suited for cron jobs.
 
-The show's metadata gets stored in the downloaded MP3 file's ID3 tags (see below).
+The show's metadata gets stored in the downloaded MP3 files' ID3 tag (see below).
 
-If a show's recording is split into multiple parts (e.g. "Morning Show"), the script will download all parts and name them accordingy ("FM4 Morning Show 2020-09-03 06_00 **[1_5]**.mp3, FM4 Morning Show 2020-09-03 06_00 **[2_5]**.mp3, ...).
+Some shows (e.g. "Morning Show") are split into multiple parts at FM4, probably to cut out advertisements.
+The script will download all parts and, without installed "pydub" Python module, name them accordingy ("FM4 Morning Show 2020-09-03 06_00 **[1_5]**.mp3, FM4 Morning Show 2020-09-03 06_00 **[2_5]**.mp3, ...).
+If "pydub" is installed all parts will be merged to a single MP3 file.
 
 **Example:**
 
@@ -25,47 +27,42 @@ This would download all available recordings of "Morning Show" and save them wit
 
 
 ## ID3 Tags
-The show's metadata is used **extensively** to set the ID3v2.3 tags for downloaded recordings.
+The metadata provided by FM4 is used **extensively** to set the ID3v2.3 tags for downloaded recordings.
 
 **Example:**
 
-The downloaded file `Downloads/Morning-Show-Recordings/FM4 Morning Show 2020-09-03 06_00 [1_5].mp3` gets this ID3 tags:
+The downloaded file `Downloads/Morning-Show-Recordings/FM4 Morning Show 2020-09-18 06_00.mp3` gets this ID3 tag:
 ```
-TPE1 (Lead performer(s)/Soloist(s)): FM4
-TALB (Album/Movie/Show title): Morning Show
-TIT2 (Title/songname/content description): 2020-09-03 06:00 [1/5]
-TRCK (Track number/Position in set): 1/5
-TLEN (Length): 00:26:33
-TDAT (Date): 0309
-TIME (Time): 0600
-TYER (Year): 2020
-APIC (Attached picture): (Front Cover)[, 3]: image/jpeg, 32580 bytes
-COMM (Comments): (desc)[deu]: Die FM4 Morning Show mit Dave Dempsey und Christoph Sepin | Wir machen Urlaub 
-                              auf der schönsten Insel Österreichs, vergeben ein sehr rares Exemplar des FM4
-                              Kalenders, erzählen euch alles über das Filmfestival Venedig und freuen uns, 
-                              dass unseren Austrian Act of the Day Strandhase zu Gast zu haben.
 TRSN (Internet radio station name): FM4
 WORS (Official internet radio station homepage): http://fm4.orf.at
 WOAS (Official audio source webpage): http://fm4.orf.at/radio/stories/fm4morningshow
+TPE1 (Lead performer(s)/Soloist(s)): FM4
+TDAT (Date): 1809
+TIME (Time): 0600
+TYER (Year): 2020
+TALB (Album/Movie/Show title): Morning Show
+TIT2 (Title/songname/content description): 2020-09-18 06:00
+TRCK (Track number/Position in set): 1/1
+TLEN (Length): 13663000
+COMM (Comments): (desc)[deu]: With Julie McCarthy and Daniel Grabner | We kept two Fm4 Kalender to
+                              give away to you and also we've got tickets for the Horror Classic
+                              From Beyond. In exchange we want your songs and bands with plants:
+                              trees, flowers, bushes - what are your favourites? Let us know and
+                              we'll play them!
+APIC (Attached picture): (Front Cover)[, 3]: image/jpeg, 32580 bytes
+CTOC ():  frame
 CHAP (Chapters):
-    Chapter #0: start 0.000000, end 171.000000
+    Chapter #0: start 0.000000, end 168.000000
       title           : News
-    Chapter #1: start 170.000000, end 187.000000
+    Chapter #1: start 167.000000, end 177.000000
       title           : ch2
-    Chapter #2: start 206.000000, end 423.000000
-      title           : Kid Simius ft. Enda Gallery / Livin'It Up
-    Chapter #3: start 420.000000, end 656.000000
-      title           : Tame Impala / Is It True
-    Chapter #4: start 652.000000, end 859.000000
-      title           : Warpaint / New Song
-    Chapter #5: start 859.000000, end 1083.000000
-      title           : FM4 Inselhüpfen: Die Wiener Donauinsel
-    Chapter #6: start 1079.000000, end 1324.000000
-      title           : Der Nino Aus Wien / Praterlied / Live 29/08/2020 Alter Schalchthof Wels; 30/08 Sommerspiele
-                        Perchtoldsdorf; 04/09 Aula Linz
-    Chapter #7: start 1323.000000, end 1368.000000
-      title           : ch8
-    Chapter #8: start 1368.000000, end 1562.000000
-      title           : DJ Shadow ft Run The Jewels / Nobody Speak / from the album 'The Mountain Will Fall' out
-                        June 24, 2016 FM4 Soundselection 35, out November 11, 2016
+    Chapter #2: start 441.000000, end 643.000000
+      title           : Chika / My Power
+    Chapter #3: start 642.000000, end 823.000000
+      title           : Cassia / Do Right
+    Chapter #4: start 823.000000, end 945.000000
+      title           : Elderbrook über seine musikalische Entwicklung
+    [... snip! ...]
+    Chapter #92: start 13438.000000, end 13663.000000
+      title           : Booka Shade ft. UNDERHER / Chemical Release
 ```

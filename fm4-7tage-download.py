@@ -1,22 +1,16 @@
 #!/usr/bin/env python3
 
 # TODO:
-# - Gibt's in den Infos was wann welches Lied gespielt wurde? -> chapters!!
-# - retries bei requests
-# - https://gist.github.com/Foolson/1db5620023675e55594e3af44f69a70d
-# - https://id3.org/id3v2.3.0
-# - argparser
-# FIXME: last chapter ending is before its start
+# - Add playlists (like https://fm4.orf.at/radio/stories/3007157/ or https://fm4.orf.at/radio/stories/3007304/), maybe content or URL as comment? But: How to find the right link?
 
 import requests
 import sys
 import urllib.parse
 import os
 import re
+import time
 from datetime import datetime
 from mutagen.id3 import ID3,ID3NoHeaderError,TRSN,TPE1,TALB,TRCK,TIT2,COMM,TYER,TDAT,TIME,TLEN,CTOC,CHAP,WOAS,WORS,APIC,CTOCFlags
-
-import time
 
 try:
     from pydub import AudioSegment
@@ -25,8 +19,8 @@ except ImportError:
     createSingleFile = False
 
 
-searchUrl = "https://audioapi.orf.at/fm4/api/json/current/search?q=%s";
-shoutcastBaseUrl = "http://loopstream01.apa.at/?channel=fm4&id=%s";
+searchUrl = "https://audioapi.orf.at/fm4/api/json/current/search?q=%s"
+shoutcastBaseUrl = "http://loopstream01.apa.at/?channel=fm4&id=%s"
 
 stationInfo = {
    'name': 'FM4',
@@ -324,10 +318,10 @@ for hit in result['hits']:
 
 
     # write ID3 Tag
-    for partInfo in showInfo['parts']:
+    for partNo in range(len(showInfo['parts'])):
         # set ID3 tags
         try:
-            tags = ID3(partInfo['filepath']+".part")
+            tags = ID3(showInfo['parts'][partNo]['filepath']+".part")
             tags.delete()
         except ID3NoHeaderError:
             tags = ID3()
@@ -335,18 +329,17 @@ for hit in result['hits']:
         tags.add(TRSN(text=[stationInfo['name']]))
         tags.add(TPE1(text=[stationInfo['name']]))
         tags.add(TALB(text=[showInfo['name']]))
-        tags.add(TRCK(text=[str(streamPartNr+1) + "/" + str(len(streamParts))]))
-        tags.add(TIT2(text=[partInfo['title']]))
+        tags.add(TRCK(text=[str(partNo+1) + "/" + str(len(showInfo['parts']))]))
+        tags.add(TIT2(text=[showInfo['parts'][partNo]['title']]))
         tags.add(COMM(lang="deu", desc="desc", text=[showInfo['description']]))
         tags.add(TYER(text=[showInfo['start_dt'].strftime("%Y")]))
         tags.add(TDAT(text=[showInfo['start_dt'].strftime("%d%m")]))
         tags.add(TIME(text=[showInfo['start_dt'].strftime("%H%M")]))
-        tags.add(TLEN(text=[partInfo['duration_ms']]))
+        tags.add(TLEN(text=[showInfo['parts'][partNo]['duration_ms']]))
         tags.add(WOAS(url=showInfo['website']))
         tags.add(WORS(url=stationInfo['website']))
 
-
-        for chapter in partInfo['chapters']:
+        for chapter in showInfo['parts'][partNo]['chapters']:
             tags.add(CHAP(
                 element_id = chapter["id"],
                 start_time = chapter["start_ms"],
@@ -354,7 +347,7 @@ for hit in result['hits']:
                 sub_frames = [TIT2(text=[chapter["title"]])]
             ))
 
-        tocList = ",".join([ chapter["id"] for chapter in partInfo['chapters'] ])
+        tocList = ",".join([ chapter["id"] for chapter in showInfo['parts'][partNo]['chapters'] ])
         tags.add(CTOC(
             element_id = "toc",
             flags = CTOCFlags.TOP_LEVEL | CTOCFlags.ORDERED,
@@ -362,15 +355,13 @@ for hit in result['hits']:
             sub_frames = [TIT2(text=["Table Of Contents"])]
         ))
 
-
         if showInfo['image_mime'] is not None and showInfo['image_data'] is not None:
             tags.add(APIC(mime=showInfo['image_mime'], desc="Front Cover", data=showInfo['image_data']))
 
-
         # save ID3 tags
-        tags.save(partInfo['filepath']+".part",v2_version=3)
+        tags.save(showInfo['parts'][partNo]['filepath']+".part",v2_version=3)
 
 
         # done!
-        os.rename(partInfo['filepath']+".part", partInfo['filepath'])
-        os.chmod(partInfo['filepath'], 0o644)
+        os.rename(showInfo['parts'][partNo]['filepath']+".part", showInfo['parts'][partNo]['filepath'])
+        os.chmod(showInfo['parts'][partNo]['filepath'], 0o644)
