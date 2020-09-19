@@ -2,9 +2,9 @@
 The Austrian radio station FM4 publishes recordings of all of their shows during the last 7 days on its website.
 
 This Python 3 script is a simple command line tool to download all currently available recordings for a specific show as MP3 files.
-The show's metadata gets stored in the downloaded MP3 files' ID3 tags (see below).
+The show's metadata gets stored in the downloaded files' ID3 tags (see below).
 
-Files aready present get skipped, so it is well suited for cron jobs.
+Files aready present are skipped, so it is well suited for cron jobs.
 
 ### Requirements
 Python 3 with modules "mutagen", "requests" and optionally "pydub".
