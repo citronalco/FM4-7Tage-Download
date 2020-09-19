@@ -5,8 +5,8 @@
 # - retries bei requests
 # - https://gist.github.com/Foolson/1db5620023675e55594e3af44f69a70d
 # - https://id3.org/id3v2.3.0
-# - chapters in rss: https://gist.github.com/gglnx/5233635
 # - argparser
+# FIXME: last chapter ending is before its start
 
 import requests
 import sys
@@ -14,7 +14,9 @@ import urllib.parse
 import os
 import re
 from datetime import datetime
-from mutagen.id3 import ID3,ID3NoHeaderError,TRSN,TPE1,TALB,TRCK,TIT2,COMM,TYER,TDAT,TIME,TLEN,TDRL,CTOC,CHAP,WOAS,WORS,APIC,CTOCFlags
+from mutagen.id3 import ID3,ID3NoHeaderError,TRSN,TPE1,TALB,TRCK,TIT2,COMM,TYER,TDAT,TIME,TLEN,CTOC,CHAP,WOAS,WORS,APIC,CTOCFlags
+
+import time
 
 try:
     from pydub import AudioSegment
@@ -26,6 +28,10 @@ except ImportError:
 searchUrl = "https://audioapi.orf.at/fm4/api/json/current/search?q=%s";
 shoutcastBaseUrl = "http://loopstream01.apa.at/?channel=fm4&id=%s";
 
+stationInfo = {
+   'name': 'FM4',
+   'website': 'http://fm4.orf.at',
+}
 
 if len(sys.argv) != 3:
     print("Usage:", file=sys.stderr)
@@ -55,7 +61,6 @@ def strip_html(text: str):
     tag = False
     quote = False
     out = ""
-
     for c in text:
             if c == '<' and not quote:
                 tag = True
@@ -83,7 +88,7 @@ def download(url: str, filepath: str, attempts=4):
                     for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
                         out_file.write(chunk)
                 return True	# success
-        except Exception as ex:
+        except:
                 return False
     return False
 
@@ -91,11 +96,6 @@ def download(url: str, filepath: str, attempts=4):
 # search for show
 response = requests.get(searchUrl % urllib.parse.quote_plus(SHOW), timeout=5)
 result = response.json()
-
-stationInfo = {
-       'name': 'FM4',
-       'website': 'http://fm4.orf.at',
-    }
 
 # for each search result fetch linked data
 for hit in result['hits']:
@@ -109,20 +109,29 @@ for hit in result['hits']:
     # dictionary to collect show data
     showInfo = {
         'name': None,
-        'start_dt': None,
-        'end_dt': None,
         'description': None,
         'website': None,
+
+        'start_dt': None,
+        'end_dt': None,
+
         'image_data': None,
         'image_mime': None,
+
         'parts': [],
+
+        'title': None,
+
+        'filename': None,
+        'filepath': None,
     }
 
     # extract show name. skip if result does not contain the show's name in the title
     match = re.search('^\s*(.*?'+SHOW+'.*?)\s*$',broadcastJson['title'],flags=re.IGNORECASE)
-    if not match:
+    if match:
+        showInfo['name'] = match.group(1)
+    else:
         continue
-    showInfo['name'] = match.group(1)
 
     # extract start and end datetime
     showInfo['start_dt'] = datetime.fromtimestamp(broadcastJson['start']/1000)
@@ -148,6 +157,25 @@ for hit in result['hits']:
         except:
             continue
 
+    # title (used as ID3 TIT2 and in filename. human readable date/time)
+    showInfo['title'] = showInfo['start_dt'].strftime("%Y-%m-%d %H:%M")
+
+    # filename
+    showInfo['filename'] = re.sub('[^\w\s\-\.\[\]]','_', showInfo['name'] + " " + showInfo['title'])
+    # prepend station name to filename
+    match = re.search('^'+stationInfo['name']+' ', showInfo['filename'])
+    if not match:
+        showInfo['filename'] = stationInfo['name'] + ' ' + showInfo['filename']
+    showInfo['filename'] += ".mp3"
+
+    # filepath
+    showInfo['filepath'] = os.path.join(DESTDIR, showInfo['filename'])
+
+    # skip if file already exists
+    if os.path.isfile(showInfo['filepath']) and os.path.getsize(showInfo['filepath'])>0:
+        print("%s already exists, skipping." % showInfo['filepath'], flush=True)
+        continue
+
 
     # most shows consist of a single file, but some shows (e.g. Morning Show) are split into multiple parts
     # download them, sorted by start time
@@ -156,17 +184,20 @@ for hit in result['hits']:
     for streamPartNr in range(0, len(streamParts)):
         partInfo = {
             'url': broadcastJson['streams'][streamPartNr]['loopStreamId'],
+
             'start_ts': broadcastJson['streams'][streamPartNr]['start'],
             'end_ts': broadcastJson['streams'][streamPartNr]['end'],
             'duration_ms': broadcastJson['streams'][streamPartNr]['end'] - broadcastJson['streams'][streamPartNr]['start'],
-            'title': None,
+
+            'title': showInfo['title'],
+
             'filename': None,
             'filepath': None,
+
             'chapters': [],
         }
 
         # if show has more than 1 part: append current_part/total_parts to title
-        partInfo['title'] = showInfo['start_dt'].strftime("%Y-%m-%d %H:%M")
         if len(streamParts)>1:
             partInfo['title'] += " [" + str(streamPartNr+1) + "/" + str(len(streamParts)) + "]"
 
@@ -189,14 +220,14 @@ for hit in result['hits']:
             continue
 
         # download file
-        print("%s downloading..." % partInfo['filepath'], end=" ", flush=True)
-        if not download(shoutcastBaseUrl % partInfo['url'], partInfo['filepath']+".part"):
+        print("Downloading %s ..." % partInfo['filepath'], end=" ", flush=True)
+        if download(shoutcastBaseUrl % partInfo['url'], partInfo['filepath']+".part"):
+            print("done.", flush=True)
+        else:
             print("failed.", flush=True)
             continue
 
-
         # set chapter information according to show's "items"
-        # https://mutagen.readthedocs.io/en/latest/user/id3.html
         chapterNr = 0
         for item in sorted(broadcastJson['items'], key=lambda x: x['start']):
             if item['entity'] == "BroadcastItem":
@@ -239,8 +270,61 @@ for hit in result['hits']:
         showInfo['parts'].append(partInfo)
 
 
+    # merge parts?
+    if len(showInfo['parts']) > 1 and createSingleFile == True:
+        print("Merging parts to %s..." % showInfo['filepath'], end=" ", flush=True)
 
-    if not createSingleFile == True and not len(showInfo['parts'])<=1:
+        # concat parts (pydub creates a wav file and re-encodes it afterwards...)
+        showAudio = sum( (AudioSegment.from_mp3(part['filepath']+".part") for part in showInfo['parts']) )
+        showAudio.export(showInfo['filepath']+'.part', format="mp3")
+
+        # remove part files
+        for part in showInfo['parts']:
+            os.remove(part['filepath']+".part")
+
+        print("done.", flush=True)
+
+        # create partInfo for newly merged single part
+        mergedPartInfo = {
+            'url': None,
+
+            'start_ts': broadcastJson['start'],
+            'end_ts': broadcastJson['end'],
+            'duration_ms': sum(list(part['end_ts'] - part['start_ts'] for part in showInfo['parts'])),
+
+            'title': showInfo['title'],
+
+            'filename': showInfo['filename'],
+            'filepath': showInfo['filepath'],
+
+            'chapters': [],
+        }
+
+        # recalculate chapter marks and reassign chapter ids
+        prevPartEnd_ts = showInfo['parts'][0]['start_ts']
+        offset_ms = 0
+        prevDuration = 0
+        chapterNr = 0
+        for part in sorted(showInfo['parts'], key=lambda x: x['start_ts']):
+            offset_ms += prevDuration
+            for chapter in part['chapters']:
+                chapterNr += 1
+                newChapterInfo = {
+                    "id": "ch" + str(chapterNr),
+                    "title": chapter['title'],
+                    "start_ms": chapter['start_ms'] + offset_ms,
+                    "end_ms": chapter['end_ms'] + offset_ms,
+                }
+                #print("GAP: "+ str(offset_ms/1000) + " " + time.strftime("%H:%M:%S", time.gmtime(newChapterInfo['start_ms']/1000)) + " - " + newChapterInfo['title'])
+                mergedPartInfo['chapters'].append(newChapterInfo)
+            prevDuration = part['end_ts'] - part['start_ts']
+
+        # replace old parts with new merged part
+        showInfo['parts'] = [ mergedPartInfo ]
+
+
+    # write ID3 Tag
+    for partInfo in showInfo['parts']:
         # set ID3 tags
         try:
             tags = ID3(partInfo['filepath']+".part")
@@ -287,113 +371,6 @@ for hit in result['hits']:
         tags.save(partInfo['filepath']+".part",v2_version=3)
 
 
-        # done
+        # done!
         os.rename(partInfo['filepath']+".part", partInfo['filepath'])
         os.chmod(partInfo['filepath'], 0o644)
-
-        print("done.", flush=True)
-
-
-    else:
-        singleFile = {
-            'title': None,
-            'filename': None,
-            'filepath': None,
-            'start_ts': broadcastJson['streams'][0]['start'],
-            'end_ts': broadcastJson['streams'][len(streamParts)-1]['end'],
-            'duration_ms': sum(list(part['end_ts'] - part['start_ts'] for part in showInfo['parts'])),
-            'title': showInfo['start_dt'].strftime("%Y-%m-%d %H:%M"),
-            'chapters': [],
-        }
-
-        # title
-        singleFile['title'] = showInfo['start_dt'].strftime("%Y-%m-%d %H:%M")
-
-        # filename
-        singleFile['filename'] = re.sub('[^\w\s\-\.\[\]]','_', showInfo['name'] + " " + singleFile['title'])
-        # prepend station name to filename
-        match = re.search('^'+stationInfo['name']+' ', singleFile['filename'])
-        if not match:
-            singleFile['filename'] = stationInfo['name'] + ' ' + singleFile['filename']
-        singleFile['filename'] += ".mp3"
-
-        # filepath
-        singleFile['filepath'] = os.path.join(DESTDIR, singleFile['filename'])
-
-        # concat parts (pydub creates a wav file and re-encodes it afterwards...)
-        showAudio = sum( (AudioSegment.from_mp3(part['filepath']+".part") for part in showInfo['parts']) )
-        showAudio.export(singleFile['filepath']+'.part', format="mp3")
-
-        # remove part files
-        for part in showInfo['parts']:
-            os.remove(part['filepath']+".part")
-
-        # recalculate chapter marks under consideration of gaps
-        prevPartEnd_ts = showInfo['parts'][0]['start_ts']
-        gap_ms = 0
-        chapterNr = 0
-        for part in sorted(showInfo['parts'], key=lambda x: x['start_ts']):
-            gap_ms += part['start_ts'] - prevPartEnd_ts
-            for chapter in part['chapters']:
-                chapterNr += 1
-                newChapterInfo = {
-                    "id": "ch" + str(chapterNr),
-                    "title": chapter['title'],
-                    "start_ms": chapter['start_ms'] + gap_ms,
-                    "end_ms": chapter['end_ms'] + gap_ms,
-                }
-                singleFile['chapters'].append(newChapterInfo)
-            prevPartEnd_ts = part['end_ts']
-
-
-        # set ID3 tags
-        try:
-            tags = ID3(singleFile['filepath']+".part")
-            tags.delete()
-        except ID3NoHeaderError:
-            tags = ID3()
-
-        tags.add(TRSN(text=[stationInfo['name']]))
-        tags.add(TPE1(text=[stationInfo['name']]))
-        tags.add(TALB(text=[showInfo['name']]))
-        tags.add(TRCK(text=["1/1"]))
-        tags.add(TIT2(text=[singleFile['title']]))
-        tags.add(COMM(lang="deu", desc="desc", text=[showInfo['description']]))
-        tags.add(TYER(text=[showInfo['start_dt'].strftime("%Y")]))
-        tags.add(TDAT(text=[showInfo['start_dt'].strftime("%d%m")]))
-        tags.add(TIME(text=[showInfo['start_dt'].strftime("%H%M")]))
-        tags.add(TLEN(text=[singleFile['duration_ms']]))
-        tags.add(WOAS(url=showInfo['website']))
-        tags.add(WORS(url=stationInfo['website']))
-
-
-        for chapter in singleFile['chapters']:
-            tags.add(CHAP(
-                element_id = chapter["id"],
-                start_time = chapter["start_ms"],
-                end_time = chapter["end_ms"],
-                sub_frames = [TIT2(text=[chapter["title"]])]
-            ))
-
-        tocList = ",".join([ chapter["id"] for chapter in singleFile['chapters'] ])
-        tags.add(CTOC(
-            element_id = "toc",
-            flags = CTOCFlags.TOP_LEVEL | CTOCFlags.ORDERED,
-            child_element_ids = [tocList],
-            sub_frames = [TIT2(text=["Table Of Contents"])]
-        ))
-
-        if showInfo['image_mime'] is not None and showInfo['image_data'] is not None:
-            tags.add(APIC(mime=showInfo['image_mime'], desc="Front Cover", data=showInfo['image_data']))
-
-
-        # save ID3 tags
-        tags.save(singleFile['filepath']+".part",v2_version=3)
-
-
-        # done
-        os.rename(singleFile['filepath']+".part", singleFile['filepath'])
-        os.chmod(singleFile['filepath'], 0o644)
-
-        print("done.", flush=True)
-
