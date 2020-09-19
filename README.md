@@ -1,23 +1,21 @@
 # FM4 7-Tage Download
-The Austrian radio station FM4 publishes MP3 recordings of all of their shows during the last 7 days on its website.
+The Austrian radio station FM4 publishes recordings of all of their shows during the last 7 days on its website.
 
-This Python 3 script is a simple command line tool to download all currently available recordings for a specific show.
+This Python 3 script is a simple command line tool to download all currently available recordings for a specific show as MP3 files.
+The show's metadata gets stored in the downloaded MP3 files' ID3 tags (see below).
+
+Files aready present get skipped, so it is well suited for cron jobs.
 
 ### Requirements
 Python 3 with modules "mutagen", "requests" and optionally "pydub".
 (On Debian/Ubuntu/Mint: `sudo apt install python3 python3-mutagen python3-requests pydub`)
 
+FM4 splits some shows (e.g. "Morning Show") into multiple files, probably to cut out advertisements.
+This script will download all those files and, with installed **"pydub"** Python module, merge them into a single MP3 file.
+If "pydub" is not installed the parts are saved as seperate MP3 files and named accordingy (e.g. "FM4 Morning Show 2020-09-03 06_00 **[1_5]**.mp3, FM4 Morning Show 2020-09-03 06_00 **[2_5]**.mp3, ...).
+
 ### Usage
 ```./fm4-7tage-download.py <ShowTitle> <TargetDirectory>```
-
-The script searches in FM4's 7-Tage-Player API for shows with a matching name and downloads them into the given target directory.
-Files aready present get skipped, so it is well suited for cron jobs.
-
-The show's metadata gets stored in the downloaded MP3 files' ID3 tag (see below).
-
-Some shows (e.g. "Morning Show") are split into multiple parts at FM4, probably to cut out advertisements.
-The script will download all parts and, without installed "pydub" Python module, name them accordingy ("FM4 Morning Show 2020-09-03 06_00 **[1_5]**.mp3, FM4 Morning Show 2020-09-03 06_00 **[2_5]**.mp3, ...).
-If "pydub" is installed all parts will be merged to a single MP3 file.
 
 **Example:**
 
