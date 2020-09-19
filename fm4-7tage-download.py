@@ -2,6 +2,7 @@
 
 # TODO:
 # - Add playlists (like https://fm4.orf.at/radio/stories/3007157/ or https://fm4.orf.at/radio/stories/3007304/), maybe content or URL as comment? But: How to find the right link?
+# - pydub does not concat the MP3 files but reencodes them. This is slow and unnecessary.
 
 import requests
 import sys
