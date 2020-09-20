@@ -64,3 +64,6 @@ CHAP (Chapters):
     Chapter #92: start 13438.000000, end 13663.000000
       title           : Booka Shade ft. UNDERHER / Chemical Release
 ```
+
+### See also
+If you want to listen to the downloaded shows with your podcast player: https://github.com/citronalco/mp3-to-rss2feed creates a RSS2 feed from MP3 files.
