@@ -21,29 +21,40 @@ except ImportError:
     pydubInstalled = False
 
 
+# arguments
 parser = argparse.ArgumentParser(
-    description = "Download all currently availabe recordings of a show from FM4's website and save them as MP3 files",
+    description = "Download all currently availabe recordings of a show from FM4's website and save them with ID3 tags as MP3 files",
 )
 parser.add_argument("ShowTitle", help="The show's title (e.g. \"Morning Show\")")
 parser.add_argument("Directory", help="The directory to save the files in (e.g. \"Downloads/Morning Show Recordings\")")
+parser.add_argument("--opus", action="store_true", help="Save files in OPUS format instead of MP3 (requires Python module \"pydub\")")
 args = parser.parse_args()
 
 SHOW = args.ShowTitle
+
 DESTDIR = args.Directory
+if not os.path.isdir(DESTDIR):
+    print("Directory %s does not exist!" % DESTDIR, file=sys.stderr)
+    sys.exit(1)
 
+FORMAT = "mp3"
+if args.opus:
+    if not pydubInstalled:
+        print("Python module pydub not installed!" file=sys.stderr)
+        sys.exit(1)
+    else:
+        FORMAT = "opus"
 
+# some preferences
 searchUrl = "https://audioapi.orf.at/fm4/api/json/current/search?q=%s"
 shoutcastBaseUrl = "http://loopstream01.apa.at/?channel=fm4&id=%s"
+
 
 stationInfo = {
    'name': 'FM4',
    'website': 'http://fm4.orf.at',
 }
 
-
-if not os.path.isdir(DESTDIR):
-    print("Directory %s does not exist!" % DESTDIR, file=sys.stderr)
-    sys.exit(1)
 
 # remove html tags
 def strip_html(text: str):
@@ -164,7 +175,7 @@ for hit in result['hits']:
     match = re.search('^'+stationInfo['name']+' ', showInfo['filename'])
     if not match:
         showInfo['filename'] = stationInfo['name'] + ' ' + showInfo['filename']
-    showInfo['filename'] += ".mp3"
+    showInfo['filename'] += "." + FORMAT
 
     # filepath
     showInfo['filepath'] = os.path.join(DESTDIR, showInfo['filename'])
@@ -206,7 +217,7 @@ for hit in result['hits']:
         match = re.search('^'+stationInfo['name']+' ', partInfo['filename'])
         if not match:
             partInfo['filename'] = stationInfo['name'] + ' ' + partInfo['filename']
-        partInfo['filename'] += ".mp3"
+        partInfo['filename'] += "." + FORMAT
 
         # filepath
         partInfo['filepath'] = os.path.join(DESTDIR, partInfo['filename'])
@@ -267,14 +278,20 @@ for hit in result['hits']:
 
         showInfo['parts'].append(partInfo)
 
+    # convert to OPUS?
+    if len(showInfo['parts']) == 1 and FORMAT == "opus":
+        print("Converting %s to OPUS..." showInfo['filepath'], end=" ", flush=True)
+        showAudio = sum( (AudioSegment.from_mp3(part['filepath']+".part") for part in showInfo['parts']) )
+        showAudio.export(showInfo['filepath']+'.part', format=FORMAT)
 
-    # merge parts?
+
+    # merge multiple parts?
     if len(showInfo['parts']) > 1 and pydubInstalled == True:
         print("Merging parts to %s..." % showInfo['filepath'], end=" ", flush=True)
 
         # concat parts (pydub creates a wav file and re-encodes it afterwards...)
         showAudio = sum( (AudioSegment.from_mp3(part['filepath']+".part") for part in showInfo['parts']) )
-        showAudio.export(showInfo['filepath']+'.part', format="mp3")
+        showAudio.export(showInfo['filepath']+'.part', format=FORMAT)
 
         # remove part files
         for part in showInfo['parts']:
@@ -298,7 +315,7 @@ for hit in result['hits']:
             'chapters': [],
         }
 
-        # recalculate chapter marks and reassign chapter ids
+        # recalculate chapter marks and reassign chapter IDs
         prevPartEnd_ts = showInfo['parts'][0]['start_ts']
         offset_ms = 0
         prevDuration = 0
