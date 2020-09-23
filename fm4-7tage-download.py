@@ -22,7 +22,7 @@ except ImportError:
 
 
 parser = argparse.ArgumentParser(
-    description = "Download all currently availabe recordings of a show from FM4's website and save them as MP3 files",
+    description = "Find all availabe recordings of a show on FM4's website, download them as MP3 files and save the shows' metadata in the ID3 tags.",
 )
 parser.add_argument("ShowTitle", help="The show's title (e.g. \"Morning Show\")")
 parser.add_argument("Directory", help="The directory to save the files in (e.g. \"Downloads/Morning Show Recordings\")")
@@ -30,8 +30,12 @@ args = parser.parse_args()
 
 SHOW = args.ShowTitle
 DESTDIR = args.Directory
+if not os.path.isdir(DESTDIR):
+    print("Directory %s does not exist!" % DESTDIR, file=sys.stderr)
+    sys.exit(1)
 
 
+# preferences
 searchUrl = "https://audioapi.orf.at/fm4/api/json/current/search?q=%s"
 shoutcastBaseUrl = "http://loopstream01.apa.at/?channel=fm4&id=%s"
 
@@ -40,10 +44,6 @@ stationInfo = {
    'website': 'http://fm4.orf.at',
 }
 
-
-if not os.path.isdir(DESTDIR):
-    print("Directory %s does not exist!" % DESTDIR, file=sys.stderr)
-    sys.exit(1)
 
 # remove html tags
 def strip_html(text: str):
@@ -95,7 +95,7 @@ def download(url: str, filepath: str, attempts=4):
 response = requests.get(searchUrl % urllib.parse.quote_plus(SHOW), timeout=5)
 result = response.json()
 
-# for each search result fetch linked data
+# for each search result: fetch linked broadcasts
 for hit in result['hits']:
     # only care about "Broadcast" and skip everything else
     if hit['data']['entity'] != "Broadcast":
