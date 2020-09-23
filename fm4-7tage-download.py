@@ -12,12 +12,24 @@ import re
 import time
 from datetime import datetime
 from mutagen.id3 import ID3,ID3NoHeaderError,TRSN,TPE1,TALB,TRCK,TIT2,COMM,TYER,TDAT,TIME,TLEN,CTOC,CHAP,WOAS,WORS,APIC,CTOCFlags
+import argparse
 
 try:
     from pydub import AudioSegment
-    createSingleFile = True
+    pydubInstalled = True
 except ImportError:
-    createSingleFile = False
+    pydubInstalled = False
+
+
+parser = argparse.ArgumentParser(
+    description = "Download all currently availabe recordings of a show from FM4's website and save them as MP3 files",
+)
+parser.add_argument("ShowTitle", help="The show's title (e.g. \"Morning Show\")")
+parser.add_argument("Directory", help="The directory to save the files in (e.g. \"Downloads/Morning Show Recordings\")")
+args = parser.parse_args()
+
+SHOW = args.ShowTitle
+DESTDIR = args.Directory
 
 
 searchUrl = "https://audioapi.orf.at/fm4/api/json/current/search?q=%s"
@@ -28,15 +40,6 @@ stationInfo = {
    'website': 'http://fm4.orf.at',
 }
 
-if len(sys.argv) != 3:
-    print("Usage:", file=sys.stderr)
-    print("%s <ShowTitle> <DownloadDir>\n" % sys.argv[0], file=sys.stderr)
-    print("Example:", file=sys.stderr)
-    print("%s 'Morning Show' 'Downloads/Morning Show Recordings'\n" % sys.argv[0], file=sys.stderr)
-    sys.exit(1)
-
-SHOW = sys.argv[1]
-DESTDIR = sys.argv[2]
 
 if not os.path.isdir(DESTDIR):
     print("Directory %s does not exist!" % DESTDIR, file=sys.stderr)
@@ -141,10 +144,10 @@ for hit in result['hits']:
     # link to show's website
     showInfo['website'] = broadcastJson['url']
 
-    # get show's cover image
-    for i in range(2,-1,-1):
+    # get show's biggest (usually 400px width) cover image
+    for imageVersion in sorted(broadcastJson['images'][0]['versions'], key=lambda x: x['width']):
         try:
-            response = requests.get(broadcastJson['images'][0]['versions'][i]['path'])
+            response = requests.get(imageVersion['path'])
             if response.status_code == 200:
                 showInfo['image_data'] = response.content
                 showInfo['image_mime'] = response.headers['content-type']
@@ -266,7 +269,7 @@ for hit in result['hits']:
 
 
     # merge parts?
-    if len(showInfo['parts']) > 1 and createSingleFile == True:
+    if len(showInfo['parts']) > 1 and pydubInstalled == True:
         print("Merging parts to %s..." % showInfo['filepath'], end=" ", flush=True)
 
         # concat parts (pydub creates a wav file and re-encodes it afterwards...)
