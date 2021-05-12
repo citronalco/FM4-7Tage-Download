@@ -37,7 +37,7 @@ if not os.path.isdir(DESTDIR):
 
 # preferences
 searchUrl = "https://audioapi.orf.at/fm4/api/json/current/search?q=%s"
-shoutcastBaseUrl = "http://loopstream01.apa.at/?channel=fm4&id=%s"
+shoutcastBaseUrl = "https://loopstreamfm4.apa.at/?channel=fm4&id=%s"
 
 stationInfo = {
    'name': 'FM4',
