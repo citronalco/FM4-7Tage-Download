@@ -23,6 +23,7 @@ If "pydub" is not installed the parts are saved as seperate MP3 files and named 
 
 This would download all available recordings of "Morning Show" and save them with correct ID3 tags in the "Downloads/Morning-Show-Recordings" directory.
 
+Be patient, FM4 throttles downloads.
 
 ## ID3 Tags
 The metadata provided by FM4 is used **extensively** to set the ID3v2.3 tags for downloaded recordings.
