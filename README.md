@@ -26,7 +26,7 @@ This would download all available recordings of "Morning Show" and save them wit
 Be patient, FM4 throttles downloads.
 
 ## ID3 Tags
-The metadata provided by FM4 is used **extensively** to set the ID3v2.3 tags for downloaded recordings.
+This script automatically extracts the metadata provided by FM4's 7-Tage-Player and saves it in the ID3v2.3 tag of the downloaded recordings.
 
 **Example:**
 
