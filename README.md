@@ -1,17 +1,17 @@
 # FM4 7-Tage Download
-The Austrian radio station FM4 publishes recordings of all of their shows during the last 7 days on its website.
+The Austrian radio station FM4 publishes recordings of all shows on its website - but only for seven days.
 
-This Python 3 script is a simple command line tool to download all currently available recordings for a specific show as MP3 files.
+This Python 3 command line script downloads all currently available recordings for a specific show as MP3 files.
 The show's metadata gets stored in the downloaded files' ID3 tags (see below).
 
-Files aready present are skipped, so it is well suited for cron jobs.
+Files aready downloaded are skipped, so this script is well suited for cron jobs.
 
 ### Requirements
 Python 3 with modules "mutagen", "requests" and optionally "pydub".
 (On Debian/Ubuntu/Mint: `sudo apt install python3 python3-mutagen python3-requests pydub`)
 
 FM4 splits some shows (e.g. "Morning Show") into multiple files, probably to cut out advertisements.
-This script will download all those files and, with installed **"pydub"** Python module, merge them into a single MP3 file.
+With installed **"pydub"** Python module this script will merge those files into a single MP3 file.
 If "pydub" is not installed the parts are saved as seperate MP3 files and named accordingy (e.g. "FM4 Morning Show 2020-09-03 06_00 **[1_5]**.mp3, FM4 Morning Show 2020-09-03 06_00 **[2_5]**.mp3, ...).
 
 ### Usage
@@ -21,12 +21,12 @@ If "pydub" is not installed the parts are saved as seperate MP3 files and named 
 
 ```./fm4-7tage-download.py "morning show" Downloads/Morning-Show-Recordings```
 
-This would download all available recordings of "Morning Show" and save them with correct ID3 tags in the "Downloads/Morning-Show-Recordings" directory.
+This would download all available recordings of "Morning Show" and save them with correct ID3 tags into the directory "Downloads/Morning-Show-Recordings".
 
-Be patient, FM4 throttles downloads.
+Be patient, FM4 throttles downloads quite heavily!
 
 ## ID3 Tags
-This script automatically extracts the metadata provided by FM4's 7-Tage-Player and saves it in the ID3v2.3 tag of the downloaded recordings.
+This script not only downloads the recordings, but also automatically extracts all metadata provided by FM4's 7-Tage-Player and saves it in appropriate ID3v2.3 tags of the downloaded MP3 files.
 
 **Example:**
 
@@ -67,4 +67,4 @@ CHAP (Chapters):
 ```
 
 ### See also
-If you want to listen to the downloaded shows with your podcast player: https://github.com/citronalco/mp3-to-rss2feed creates a RSS2 feed from MP3 files.
+If you run a web server and want to listen to the downloaded shows with your podcast player: https://github.com/citronalco/mp3-to-rss2feed creates a RSS2 feed from MP3 files.
