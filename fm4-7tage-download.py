@@ -76,6 +76,11 @@ def strip_html(text: str):
 
 # download in chunks
 def download(url: str, filepath: str, attempts=4):
+    # temporary workaround for House of Pain from 2025-01-01:
+    # Streaming server delivers a html page instead of mp3 data. Show also cannot be played in FM4 7-Tage player, so it's a server issue.
+    # Works when not starting from the beginning, but with an offset >= 5000
+    #url = url + "&offset=5000"
+
     for attempt in range(1, attempts+1):
         try:
             if attempt > 1:
