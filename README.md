@@ -61,6 +61,9 @@ FM4's recommendations for cuts are ignored, and all News and advertisements get 
 This script not only downloads the recordings, but also automatically extracts all metadata provided by FM4 and saves it in appropriate ID3v2.3 tags of the downloaded MP3 files.
 The tracklist with its cover images gets translated into ID3 chapters.
 
+Unfortunately, most generic media players only support basic ID3 tags. Your chances are much higher with Podcast players.
+Here's a simple MP3 player with proper support for chapters: https://mp3chapters.github.io/player/
+
 **Example:**
 
 The downloaded file `Downloads/Morning-Show-Recordings/FM4 Morning Show 2020-09-18 06_00.mp3` gets this ID3 tag:

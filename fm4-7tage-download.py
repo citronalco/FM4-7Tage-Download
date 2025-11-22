@@ -459,7 +459,7 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast_json):
     previous_start_time = -1
     for chapter in sorted(chapters, key=lambda x: (x['start'], 1/x['end'])):
         sub_frames = []
-        
+
         chapter_title = chapter.get('title')
         if chapter_title:
             sub_frames.append(TIT2(text=[chapter_title]))
