@@ -1,32 +1,65 @@
 # FM4 7-Tage Download
+
+Command line script to downloads recordings from FM4's Player.
+
+## Description
 The Austrian radio station FM4 publishes recordings of all shows on its website - but only for seven days.
+This Python 3 command line script downloads currently available recordings of a show, so you can keep them longer.
 
-This Python 3 command line script downloads all currently available recordings for a specific show as MP3 files.
-The show's metadata gets stored in the downloaded files' ID3 tags (see below).
+The show's metadata, like playlist and cover images, gets stored in the downloaded files' ID3 tags (see below).
+Optionally, sections like advertisements, news etc. are removed automatically.
+Audio is not reencoded, so there is no loss in quality.
+Recordings are saved in MP3 format.
 
-Files aready downloaded are skipped, so this script is well suited for cron jobs.
-
-### Requirements
-Python 3 with modules "mutagen", "requests" and optionally "pydub".
-(On Debian/Ubuntu/Mint: `sudo apt install python3 python3-mutagen python3-requests pydub`)
-
-FM4 splits some shows (e.g. "Morning Show") into multiple files, probably to cut out advertisements.
-With installed **"pydub"** Python module this script will merge those files into a single MP3 file.
-If "pydub" is not installed the parts are saved as seperate MP3 files and named accordingy (e.g. "FM4 Morning Show 2020-09-03 06_00 **[1_5]**.mp3, FM4 Morning Show 2020-09-03 06_00 **[2_5]**.mp3, ...).
-
-### Usage
-```./fm4-7tage-download.py <ShowTitle> <TargetDirectory>```
-
-**Example:**
-
-```./fm4-7tage-download.py "morning show" Downloads/Morning-Show-Recordings```
-
-This would download all available recordings of "Morning Show" and save them with correct ID3 tags into the directory "Downloads/Morning-Show-Recordings".
+Already downloaded broadcasts are skipped, so this script is well suited for cron jobs.
 
 Be patient, FM4 throttles downloads quite heavily!
 
+## Requirements
+Python 3 with modules "mutagen", "requests" and, optionally, "av".
+(On Debian/Ubuntu/Mint: `sudo apt install python3 python3-mutagen python3-requests python3-av`)
+
+If the "av" Python module is installed, this script can cut broadcasts in the same way as it gets played in [FM4's Player](https://fm4.orf.at/player) (usually News at the beginning are removed). Additionally, it is able to remove advertisements, news, jingles, etc.
+Without the "av" Python module, this script saves the whole broadcast.
+
+## Usage
+```
+fm4-7tage-download.py [-h] [-c TYPE] [-i] [-n] ShowTitle [TargetDirectory]
+
+Find all availabe recordings of a show on FM4's website, download them as MP3 files and save the shows' metadata in the ID3 tags.
+
+positional arguments:
+ShowTitle         The show's title (e.g. "Morning Show")
+TargetDirectory   Directory to save the files in (default: current directory)
+
+options:
+-h, --help       Show this help message and exit
+-c, --cut TYPE   Cut all chapters of given types from recording, comma separated (default: None)
+                 Known types:
+                     B = Feature ("Beitrag"), J = Jingle, M = Music ("Musik"),
+                     N = News ("Nachrichten"), SO = Feature, W = Advertisement ("Werbung")
+-i, --ignore     Ignore recommended audio section removals (default: False)
+                 Typically News are removed/skipped this way
+-n, --newest     Download newest broadcast only (default: False)
+```
+### Examples
+**Simple:**
+
+```fm4-7tage-download.py "morning show"```
+
+Download all available broadcast of "*Morning Show*", cut them in the same way as FM4 does in it's Player, and save them with filled out ID3 tags into the current directory.
+
+**Advanced:**
+
+```fm4-7tage-download.py --cut N,W --ignore --newest "morning show" "Downloads/Morning Show Recordings"```
+
+Download only the newest broadcast of "*Morning Show*" and save it with filled out ID3 tags into "*Downloads/Morning-Show-Recordings"*.
+FM4's recommendations for cuts are ignored, and all News and advertisements get removed.
+
+
 ## ID3 Tags
-This script not only downloads the recordings, but also automatically extracts all metadata provided by FM4's 7-Tage-Player and saves it in appropriate ID3v2.3 tags of the downloaded MP3 files.
+This script not only downloads the recordings, but also automatically extracts all metadata provided by FM4 and saves it in appropriate ID3v2.3 tags of the downloaded MP3 files.
+The tracklist with its cover images gets translated into ID3 chapters.
 
 **Example:**
 
@@ -44,27 +77,27 @@ TIT2 (Title/songname/content description): 2020-09-18 06:00
 TRCK (Track number/Position in set): 1/1
 TLEN (Length): 13663000
 COMM (Comments): (desc)[deu]: With Julie McCarthy and Daniel Grabner | We kept two Fm4 Kalender to
-                              give away to you and also we've got tickets for the Horror Classic
-                              From Beyond. In exchange we want your songs and bands with plants:
-                              trees, flowers, bushes - what are your favourites? Let us know and
-                              we'll play them!
+give away to you and also we've got tickets for the Horror Classic
+From Beyond. In exchange we want your songs and bands with plants:
+trees, flowers, bushes - what are your favourites? Let us know and
+we'll play them!
 APIC (Attached picture): (Front Cover)[, 3]: image/jpeg, 32580 bytes
-CTOC ():  frame
+CTOC (): frame
 CHAP (Chapters):
-    Chapter #0: start 0.000000, end 168.000000
-      title           : News
-    Chapter #1: start 167.000000, end 177.000000
-      title           : ch2
-    Chapter #2: start 441.000000, end 643.000000
-      title           : Chika / My Power
-    Chapter #3: start 642.000000, end 823.000000
-      title           : Cassia / Do Right
-    Chapter #4: start 823.000000, end 945.000000
-      title           : Elderbrook über seine musikalische Entwicklung
-    [... snip! ...]
-    Chapter #92: start 13438.000000, end 13663.000000
-      title           : Booka Shade ft. UNDERHER / Chemical Release
+Chapter #0: start 0.000000, end 168.000000
+title : News
+Chapter #1: start 167.000000, end 177.000000
+title : ch2
+Chapter #2: start 441.000000, end 643.000000
+title : Chika: My Power
+Chapter #3: start 642.000000, end 823.000000
+title : Cassia: Do Right
+Chapter #4: start 823.000000, end 945.000000
+title : Elderbrook über seine musikalische Entwicklung
+[... snip! ...]
+Chapter #92: start 13438.000000, end 13663.000000
+title : Booka Shade ft. UNDERHER: Chemical Release
 ```
 
-### See also
-If you run a web server and want to listen to the downloaded shows with your podcast player: https://github.com/citronalco/mp3-to-rss2feed creates a RSS2 feed from MP3 files.
+## See also
+If you run a web server and want to listen to the downloaded shows with your podcast player: https://github.com/citronalco/mp3-to-rss2feed creates a RSS2 feed from MP3 files and their ID3 tags.
