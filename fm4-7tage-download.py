@@ -13,7 +13,7 @@ import argparse
 import io
 import signal
 
-from mutagen.id3 import ID3,ID3NoHeaderError,TRSN,TRSO,TPE1,TALB,TRCK,TIT2,COMM,TYER,TDAT,TIME,TLEN,CTOC,CHAP,WOAS,WORS,APIC,CTOCFlags,PictureType
+from mutagen.id3 import ID3,ID3NoHeaderError,TRSN,TRSO,TPE1,TALB,TRCK,TIT2,COMM,TYER,TDAT,TIME,TLEN,CTOC,CHAP,WOAS,WORS,TCON,APIC,CTOCFlags,PictureType
 import requests
 
 try:
@@ -426,25 +426,26 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast_json):
         tags = ID3()
 
     # Add new id3 tags
-    tags.add(TRSN(text=[STATION_INFO['name']]))                      # Internet radio station name
-    tags.add(TRSO(text=['ORF']))                                    # Internet radio station owner
-    tags.add(WOAS(url=broadcast_json['url']))                        # Official audio source webpage
-    tags.add(WORS(url=STATION_INFO['website']))                      # Official Internet radio station homepage
+    tags.add(TRSN(text=[STATION_INFO['name']]))                           # Internet radio station name
+    tags.add(TRSO(text=['ORF']))                                          # Internet radio station owner
+    tags.add(WOAS(url=broadcast_json['url']))                             # Official audio source webpage
+    tags.add(WORS(url=STATION_INFO['website']))                           # Official Internet radio station homepage
+    tags.add(TCON(text=["Radio Recording"]))                              # Content Description
 
-    tags.add(TPE1(text=[strip_html(STATION_INFO['name'])]))          # Lead performer(s)/Soloist(s) -> "FM4"
-    tags.add(TALB(text=[strip_html(broadcast_json['title'])]))       # Album/Movie/Show title
-    tags.add(TRCK(text=["1/1"]))                                    # Track number/Position in set
-    tags.add(TIT2(text=[strip_html(broadcast_json['title'])]))       # Title/songname/content description
+    tags.add(TPE1(text=[strip_html(STATION_INFO['name'])]))               # Lead performer(s)/Soloist(s) -> "FM4"
+    tags.add(TALB(text=[strip_html(broadcast_json['title'])]))            # Album/Movie/Show title
+    tags.add(TRCK(text=["1/1"]))                                          # Track number/Position in set
+    tags.add(TIT2(text=[broadcast_datetime.strftime("%Y-%m-%d %H%M")]))   # Title/songname/content description
 
-    tags.add(COMM(lang="deu", desc="desc", text=[broadcast_description]))    # Comments
+    tags.add(COMM(lang="deu", desc="desc", text=[broadcast_description])) # Comments
 
-    tags.add(TYER(text=[broadcast_datetime.strftime("%Y")]))         # Year of broadcast
-    tags.add(TDAT(text=[broadcast_datetime.strftime("%Y-%m-%d")]))   # Date of broadcast
-    tags.add(TIME(text=[broadcast_datetime.strftime("%H%M")]))       # Time of broadcast
+    tags.add(TYER(text=[broadcast_datetime.strftime("%Y")]))              # Year of broadcast
+    tags.add(TDAT(text=[broadcast_datetime.strftime("%m%d")]))            # Month and day of broadcast
+    tags.add(TIME(text=[broadcast_datetime.strftime("%H%M")]))            # Time of broadcast
 
-    tags.add(TLEN(text=[broadcast_duration]))                        # Duration in ms
+    tags.add(TLEN(text=[broadcast_duration]))                             # Duration in ms
 
-    # Try to download and add cover Image
+    # Try to download and add cover image
     image = get_image(broadcast_json.get('images'))
     if image:
         tags.add(APIC(
