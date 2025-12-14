@@ -435,7 +435,7 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast_json):
     tags.add(TPE1(text=[strip_html(STATION_INFO['name'])]))               # Lead performer(s)/Soloist(s) -> "FM4"
     tags.add(TALB(text=[strip_html(broadcast_json['title'])]))            # Album/Movie/Show title
     tags.add(TRCK(text=["1/1"]))                                          # Track number/Position in set
-    tags.add(TIT2(text=[broadcast_datetime.strftime("%Y-%m-%d %H%M")]))   # Title/songname/content description
+    tags.add(TIT2(text=[broadcast_datetime.strftime("%Y-%m-%d %H:%M")]))  # Title/songname/content description
 
     tags.add(COMM(lang="deu", desc="desc", text=[broadcast_description])) # Comments
 
