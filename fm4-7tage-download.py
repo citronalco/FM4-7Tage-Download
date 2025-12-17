@@ -440,7 +440,7 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast_json):
     tags.add(COMM(lang="deu", desc="desc", text=[broadcast_description])) # Comments
 
     tags.add(TYER(text=[broadcast_datetime.strftime("%Y")]))              # Year of broadcast
-    tags.add(TDAT(text=[broadcast_datetime.strftime("%m%d")]))            # Month and day of broadcast
+    tags.add(TDAT(text=[broadcast_datetime.strftime("%d%m")]))            # Day and month of broadcast
     tags.add(TIME(text=[broadcast_datetime.strftime("%H%M")]))            # Time of broadcast
 
     tags.add(TLEN(text=[broadcast_duration]))                             # Duration in ms
