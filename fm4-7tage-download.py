@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-# TODO:
-# - Add playlists (like https://fm4.orf.at/radio/stories/3007157/ or https://fm4.orf.at/radio/stories/3007304/), maybe content or URL as comment? But: How to find the right link?
-
 import sys
 import urllib.parse
 import os
@@ -27,8 +24,7 @@ except ImportError:
 STATION_INFO = {
     'name': 'FM4',
     'website': 'https://fm4.orf.at',
-    'player_search_url': "https://audioapi.orf.at/fm4/api/json/current/search?q=%s",
-    'shoutcast_base_url': "https://loopstreamfm4.apa.at/?channel=fm4&id=%s",
+    'player_search_url': "https://audioapi-v2.orf.at/radiothek/api/2.0/search/?q={query}&station=fm4&excludeType=M&excludeType=ML&excludeType=DJ&entity=broadcast&limit={limit}&offset={offset}",
 }
 
 
@@ -45,60 +41,76 @@ def get_all_broadcasts(show_title):
     Return list with JSON data of each broadcast
     """
 
-    response = requests.get(STATION_INFO['player_search_url'] % urllib.parse.quote_plus(show_title), timeout=5)
-    results_json = response.json()
+    # search results are paginated
+    query = urllib.parse.quote_plus(show_title)
+    limit = 20
+    offset = 0
+    search_results = []
+    while True:
+        results_json = requests.get(STATION_INFO['player_search_url'].format(query=query, limit=limit, offset=offset), timeout=5).json()
+        if results_json['length'] == 0:
+            break
+        search_results += results_json['payload']
+        offset += limit
 
+    # loop through search results, for each result check if it's valid and get its broadcast json, with items
+    all_broadcasts = []
     # For each search result, sorted from newest to oldest: fetch linked broadcasts
-    all_broadcast_jsons = []
-    for hit in sorted(results_json['hits'], key=lambda x: x['data']['start'], reverse=True):
+    for hit in sorted(search_results, key=lambda x: x['data']['start'], reverse=True):
 
-        # Only care about broadcasts of type "Broadcast" and skip everything else
-        if hit['data']['entity'] != "Broadcast":
+        # Skip broadcasts that have not ended yet
+        if datetime.fromisoformat(hit['data']['end']).timestamp() > datetime.now().timestamp():
             continue
-
-        # Download json of broadcast
-        broadcast_json = requests.get(hit['data']['href'], timeout=5).json()
 
         # Remove station's name from show's title, so that user may search for 'fm4 house of pain' or 'house of pain'
         clean_show_title = re.sub(r'^' + STATION_INFO['name'] + r'[\-\s]*', '', show_title, flags=re.IGNORECASE)
+        # Skip broadcast if title does match the wanted show's name, with or without the station's name in front
+        if not re.search(r'^\s*(?:' + STATION_INFO['name'] + r')?[\s\-]*' + clean_show_title + r'\s*$', hit['data']['title'], flags=re.IGNORECASE):
+            continue
 
-        # Skip broadcast if title does not contain the wanted show's name, with or without the station's name in front
-        if re.search(r'^\s*(?:' + STATION_INFO['name'] + r')?[\s\-]*' + clean_show_title + r'\s*$', broadcast_json['title'], flags=re.IGNORECASE):
-            all_broadcast_jsons.append(broadcast_json)
+        # Download json of broadcast, including items (=chapters)
+        broadcast = requests.get(hit['data']['href'] + '?items=true', timeout=5).json()
+        all_broadcasts.append(broadcast['payload'])
 
-    return all_broadcast_jsons
+    return all_broadcasts
 
 
-def create_filename(broadcast_json):
+def create_filename(broadcast):
     """
     Construct a sensible filename for the broadcast
     """
 
-    show_name = strip_html(broadcast_json['title'])
+    show_name = strip_html(broadcast['title'])
     station_name = STATION_INFO['name'] if not show_name.lower().startswith(STATION_INFO['name'].lower()) else None
-    airdate_string = datetime.fromtimestamp(broadcast_json['start']/1000).strftime("%Y-%m-%d %H:%M")
+    airdate_string = datetime.fromisoformat(broadcast['start']).astimezone().strftime("%Y-%m-%d %H:%M")
 
     filename = ' '.join(filter(None, [station_name, show_name, airdate_string])) + '.mp3'
 
     return re.sub(r'[^\w\s\-\.\[\]]','_', filename)
 
 
-def get_chapters(broadcast_json):
+def get_chapters(broadcast):
     """
-    Retrieve list of chapters from broadcast_json
+    Get list of chapters ("items") from broadcast
     """
 
+    broadcast_duration = broadcast['duration']
     chapters = []
+    for item_num, item in enumerate(sorted(broadcast['items'], key=lambda x: (x['start'], 1/x['duration']))):
+        # do not take start/end from item's stream - in rare cases items do not have a stream element at all
+        broadcast_start_ts = datetime.fromisoformat(broadcast['start']).timestamp()
+        item_start_ts = datetime.fromisoformat(item['start']).timestamp()
 
-    # Chapters are "items" in broadcast_json.
-    for item_num, item in enumerate(sorted(broadcast_json['items'], key=lambda x: (x['start'], 1/x['end']))):
+        offset_start = (item_start_ts - broadcast_start_ts) * 1000
+        offset_end = offset_start + item['duration']
+
         if item['entity'] != "BroadcastItem":
             continue
 
         chapter = {
             'id': f'chp{item_num+1}',
-            'start': max(0, item['start'] - broadcast_json['start']),
-            'end': min(item['end'], broadcast_json['end']) - broadcast_json['start'],
+            'offset_start': int(max(0, offset_start)),
+            'offset_end': int(min(offset_end, broadcast_duration)),
             'title': None,
             'hidden': False,
             'images': item.get('images'),
@@ -132,26 +144,25 @@ def get_chapters(broadcast_json):
     return chapters
 
 
-def get_keepmarks(broadcast_json):
+def get_keepmarks(broadcast):
     """
-    Get markers from broadcatJson, return list of audio segments to keep ([ startTime, endTime])
+    In its player, ORF often does not play the whole broadcast as it got aired, but leaves some parts out (e.g. news)
+    The parts that are played are listed as "streams" in broadcast. Each stream has a start and end time. It seems like streams do never overlap.
+
+    Return a list [startTime, endTime] of all "streams" and use them as suggestion which parts of the broadcast to keep (and which to remove)
+    Times are seconds from broadcast start.
     In case of no markers, return empty list and keep all audio
     """
 
     keepmarks = []
-    start = None
-    end = None
+    broadcast_duration = broadcast['duration']
 
-    for mark in sorted(broadcast_json['marks'], key=lambda x: x['timestamp']):
-        if mark['type'] == 'in':
-            start = max(mark['timestamp'], broadcast_json['start'])
-        elif mark['type'] == 'out':
-            end = min(mark['timestamp'], broadcast_json['end'])
+    for stream in sorted(broadcast['streams'], key=lambda x: x['offsetStart']):
+        # Assure keepmark does neither start before nor end after broadcast
+        offset_start = max(stream['offsetStart'], 0)
+        offset_end = min(stream['offsetEnd'], broadcast_duration)
 
-        if start is not None and end is not None:
-            keepmarks.append([start - broadcast_json['start'], end - broadcast_json['start']])
-            start = None
-            end = None
+        keepmarks.append([offset_start, offset_end])
 
     return keepmarks
 
@@ -160,31 +171,32 @@ def remove_chapters_from_keepmark(keepmark, chapters):
     """
     Remove list of chapters from a keepmark
     Return list of new keepmarks
-    """
 
+    This is used by remove_chaptertypes_from_keepmarks() to get rid of unwanted audio.
+    """
     for chapter_num, chapter in enumerate(chapters):
 
-        # Chapter starts after keepmark. chapters are sorted by time, so we are done
-        if chapter['start'] > keepmark[1]:
+        # Chaper starts after this keepmark. chapters are sorted by time, so we are done
+        if chapter['offset_start'] > keepmark[1]:
             return [ keepmark ]
 
         # Chapter has already ended before this keepmark -> head on with next chapter
-        if chapter['end'] <= keepmark[0]:
+        if chapter['offset_end'] <= keepmark[0]:
             continue
 
         # Chapter spans whole keepmark -> ditch keepmark
-        if chapter['start'] >= keepmark[0] and chapter['end'] >=  keepmark[1]:
+        if chapter['offset_start'] >= keepmark[0] and chapter['offset_end'] >=  keepmark[1]:
             #return []
             break
 
         # Chapter starts before this keepmark and ends in this keepmark
-        if chapter['start'] < keepmark[0]:
-            return remove_chapters_from_keepmark([chapter['end'], keepmark[1]], chapters[chapter_num:])
+        if chapter['offset_start'] < keepmark[0]:
+            return remove_chapters_from_keepmark([chapter['offset_end'], keepmark[1]], chapters[chapter_num:])
 
         # Chapter starts and ends in this keepmark -> split it up into two, head on with right one
-        if chapter['end'] <= keepmark[1]:
-            left = [ keepmark[0], chapter['start'] ]
-            right = remove_chapters_from_keepmark([ min(chapter['end'], keepmark[1]), keepmark[1]], chapters[chapter_num:])
+        if chapter['offset_end'] <= keepmark[1]:
+            left = [ keepmark[0], chapter['offset_start'] ]
+            right = remove_chapters_from_keepmark([ min(chapter['offset_end'], keepmark[1]), keepmark[1]], chapters[chapter_num:])
             return [ left ] + right
 
     # keepmark not affected by any chapter, return unmodified
@@ -193,7 +205,7 @@ def remove_chapters_from_keepmark(keepmark, chapters):
 
 def remove_chaptertypes_from_keepmarks(keepmarks, chapters, chapter_types):
     """
-    Remove list of chapters from keepmarks
+    Remove chapters of given types from keepmarks so that they get cut out.
     Return updated list of keepmarks
     """
 
@@ -211,14 +223,14 @@ def remove_chaptertypes_from_keepmarks(keepmarks, chapters, chapter_types):
 
 def align_chapters_to_keepmarks(chapters, keepmarks):
     """
-    If audio segments get cut out, chapter start & end markers may be in the removed parts of audio,
-    or even completely gone.
-    Ensure every chapter contains audio, and starts/ends at the proper time
+    If audio segments get cut out, chapter start & end markers (or even both) may be in the removed parts of audio.
+    Ensure every chapter contains audio (if not: drop it), and starts/ends at the proper time
     """
-    chapters = sorted(chapters, key=lambda x: x['start'])
+
+    chapters = sorted(chapters, key=lambda x: x['offset_start'])
     keepmarks = sorted(keepmarks, key=lambda x: x[0])
 
-    broadcast_duration = sum(end-start for start, end in keepmarks)
+    broadcast_duration = sum(offset_end - offset_start for offset_start, offset_end in keepmarks)
 
     # List with total duration of all gaps until each keepmark
     gaps = []
@@ -233,20 +245,20 @@ def align_chapters_to_keepmarks(chapters, keepmarks):
     aligned_chapters = []
 
     for chapter in chapters:
-        start = None
-        end = None
+        new_offset_start = None
+        new_offset_end = None
         skip_chapter_flag = False
         # Walk through keepmarks from start to end, and set chapter start times
         for keepmark_num, keepmark in enumerate(keepmarks):
-            if chapter['end'] < keepmark[0]:
+            if chapter['offset_end'] < keepmark[0]:
                 # Chapter ends before start of keepmark
                 # -> Skip chapter
                 skip_chapter_flag = True
                 break
-            if chapter['start'] <= keepmark[1]:
+            if chapter['offset_start'] <= keepmark[1]:
                 # Chapter ends after start of keepmark (see if-clause above) and ends before end of keepmark
                 # -> Fix chapter's start time
-                start = max(chapter['start'], keepmark[0]) - gaps[keepmark_num]
+                new_offset_start = max(chapter['offset_start'], keepmark[0]) - gaps[keepmark_num]
                 break
 
         if skip_chapter_flag:
@@ -254,24 +266,24 @@ def align_chapters_to_keepmarks(chapters, keepmarks):
 
         # Walk through keepmarks from end to start, and set chapter end times
         for keepmark_num, keepmark in reversed(list(enumerate(keepmarks))):
-            if chapter['start'] > keepmark[1]:
+            if chapter['offset_start'] > keepmark[1]:
                 # Chapter starts after end of keepmark
                 # -> Skip chapter
                 skip_chapter_flag = True
                 break
-            if chapter['end'] >= keepmark[0]:
+            if chapter['offset_end'] >= keepmark[0]:
                 # Chapter starts before end of keepmark (see if-clause above) and ends after start of keepmark
                 # -> Fix chapter's end time
-                end = min(chapter['end'], keepmark[1]) - gaps[keepmark_num]
+                new_offset_end = min(chapter['offset_end'], keepmark[1]) - gaps[keepmark_num]
                 break
 
         if skip_chapter_flag:
             continue
 
-        if start is not None and end is not None and start < end:
+        if new_offset_start is not None and new_offset_end is not None and new_offset_start < new_offset_end:
             aligned_chapter=chapter.copy()
-            aligned_chapter['start'] = start
-            aligned_chapter['end'] = min(end, broadcast_duration)
+            aligned_chapter['offset_start'] = new_offset_start
+            aligned_chapter['offset_end'] = min(new_offset_end, broadcast_duration)
             aligned_chapters.append(aligned_chapter)
 
     return aligned_chapters
@@ -317,7 +329,7 @@ def cut_audio(audio, keepmarks):
         output_buffer = io.BytesIO()
         with av.open(output_buffer, 'w', format='mp3') as output_container:
             # set bit_rate to help mp3 players to calculate duration
-            output_stream = output_container.add_stream('mp3', bit_rate=input_stream.bit_rate, rate=input_stream.rate)
+            output_container.add_stream('mp3', bit_rate=input_stream.bit_rate, rate=input_stream.rate)
 
             keepmarks_iter = iter(sorted(keepmarks, key=lambda x: x[0]))
             start, end = next(keepmarks_iter)
@@ -327,11 +339,11 @@ def cut_audio(audio, keepmarks):
                     # Skip "flushing" packets created by demux
                     continue
 
-                timestamp = int(packet.pts * input_stream.time_base * 1000)
+                timestamp = int(packet.pts * input_stream.time_base)
 
-                if timestamp < start:
+                if timestamp * 1000 < start:
                     continue
-                elif timestamp >= end:
+                elif timestamp * 1000 >= end:
                     try:
                         start, end = next(keepmarks_iter)
                     except StopIteration:
@@ -344,7 +356,7 @@ def cut_audio(audio, keepmarks):
 
 def strip_html(text: str):
     """
-    Remove HTML tags
+    Remove HTML tags from a string
     """
 
     if text is None:
@@ -377,7 +389,7 @@ def strip_html(text: str):
 
 def get_image(images_list):
     """
-    Try to download biggest image using JSON's "images" entry
+    Try to download biggest image using broadcast JSON's "images" entry
     Return dict {'data': binary image data, 'mime': image mime type }
     """
 
@@ -385,7 +397,7 @@ def get_image(images_list):
         return None
 
     # get biggest (usually 600px width) image
-    for image_version in sorted(images_list[0]['versions'], key=lambda x: x['width']):
+    for image_version in sorted(images_list[0]['versions'], key=lambda x: x['width'], reverse=True):
         try:
             response = requests.get(image_version['path'], timeout=5)
             if response.status_code == 200:
@@ -398,7 +410,7 @@ def get_image(images_list):
     return None
 
 
-def set_id3_tags(filepath, chapters, keepmarks, broadcast_json):
+def set_id3_tags(filepath, chapters, keepmarks, broadcast):
     """
     Set id3 tags on mp3 file
     """
@@ -407,16 +419,16 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast_json):
     broadcast_duration = sum(end-start for start, end in keepmarks)
 
     # Create datetime object from broadcast's start time
-    broadcast_datetime = datetime.fromtimestamp(broadcast_json['start']/1000)
+    broadcast_datetime = datetime.fromisoformat(broadcast['start'])
 
     # Create sensible broadcast description
     broadcast_description = "\n".join(filter(None, map(strip_html, [
-        broadcast_json.get('subtitle'),
-        broadcast_json.get('description'),
-        broadcast_json.get('pressRelease')
+        broadcast.get('subtitle'),
+        broadcast.get('description'),
+        broadcast.get('pressRelease')
     ])))
     if not broadcast_description:
-        broadcast_description = broadcast_datetime.strftime("%Y-%m-%d %H:%M")
+        broadcast_description = broadcast_datetime.astimezone().strftime("%Y-%m-%d %H:%M")
 
     # Remove (potentially) existing id3 tags
     try:
@@ -428,25 +440,28 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast_json):
     # Add new id3 tags
     tags.add(TRSN(text=[STATION_INFO['name']]))                           # Internet radio station name
     tags.add(TRSO(text=['ORF']))                                          # Internet radio station owner
-    tags.add(WOAS(url=broadcast_json['url']))                             # Official audio source webpage
+    try:
+        tags.add(WOAS(url=broadcast['link']['url']))                 # Official audio source webpage
+    except (KeyError, TypeError):
+        pass
     tags.add(WORS(url=STATION_INFO['website']))                           # Official Internet radio station homepage
     tags.add(TCON(text=["Radio Recording"]))                              # Content Description
 
     tags.add(TPE1(text=[strip_html(STATION_INFO['name'])]))               # Lead performer(s)/Soloist(s) -> "FM4"
-    tags.add(TALB(text=[strip_html(broadcast_json['title'])]))            # Album/Movie/Show title
+    tags.add(TALB(text=[strip_html(broadcast['title'])]))            # Album/Movie/Show title
     tags.add(TRCK(text=["1/1"]))                                          # Track number/Position in set
-    tags.add(TIT2(text=[broadcast_datetime.strftime("%Y-%m-%d %H:%M")]))  # Title/songname/content description
+    tags.add(TIT2(text=[broadcast_datetime.astimezone().strftime("%Y-%m-%d %H:%M")]))   # Title/songname/content description
 
     tags.add(COMM(lang="deu", desc="desc", text=[broadcast_description])) # Comments
 
-    tags.add(TYER(text=[broadcast_datetime.strftime("%Y")]))              # Year of broadcast
-    tags.add(TDAT(text=[broadcast_datetime.strftime("%d%m")]))            # Day and month of broadcast
-    tags.add(TIME(text=[broadcast_datetime.strftime("%H%M")]))            # Time of broadcast
+    tags.add(TYER(text=[broadcast_datetime.astimezone().strftime("%Y")]))              # Year of broadcast
+    tags.add(TDAT(text=[broadcast_datetime.astimezone().strftime("%d%m")]))            # Day and month of broadcast
+    tags.add(TIME(text=[broadcast_datetime.astimezone().strftime("%H%M")]))            # Time of broadcast
 
-    tags.add(TLEN(text=[broadcast_duration]))                             # Duration in ms
+    tags.add(TLEN(text=[int(broadcast_duration)]))                 # Duration in ms
 
     # Try to download and add cover image
-    image = get_image(broadcast_json.get('images'))
+    image = get_image(broadcast.get('images'))
     if image:
         tags.add(APIC(
             type=PictureType.COVER_FRONT,
@@ -457,8 +472,8 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast_json):
     # Chapters
     # ID3 forbids multiple chapters having the same start time
     #  -> If multiple chapters start at the same time, start with the longest one and add 1ms to each following
-    previous_start_time = -1
-    for chapter in sorted(chapters, key=lambda x: (x['start'], 1/x['end'])):
+    previous_offset_start = -1
+    for chapter in sorted(chapters, key=lambda x: (x['offset_start'], 1/x['offset_end'])):
         sub_frames = []
 
         chapter_title = chapter.get('title')
@@ -473,14 +488,14 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast_json):
                 data=chapter_image['data']
             ))
 
-        chapter_start_time = max(chapter['start'], previous_start_time + 1)
+        offset_start = max(chapter['offset_start'], previous_offset_start + 1)
         tags.add(CHAP(
             element_id = chapter['id'],
-            start_time = max(0, chapter_start_time),
-            end_time = min(chapter['end'], broadcast_duration),
+            start_time = int(max(0, offset_start)),
+            end_time = int(min(chapter['offset_end'], broadcast_duration)),
             sub_frames = sub_frames,
         ))
-        previous_start_time = chapter_start_time
+        previous_offset_start = offset_start
 
     tags.add(CTOC(
         element_id = "toc",
@@ -514,7 +529,7 @@ def main():
 
     # If PyAV is not available do not try to cut anything
     if not PYAV_AVAILABLE and (CUT_CHAPTER_TYPES or not IGNORE_KEEPMARKS):
-        print("PyAV not found, cutting audio not supported. Will continue to download complete broadcasts.")
+        print("PyAV not found, cutting audio not supported. Will download complete broadcasts.")
         CUT_CHAPTER_TYPES = []
         IGNORE_KEEPMARKS = True
 
@@ -523,20 +538,22 @@ def main():
         sys.exit(1)
 
     # Search for all broadcasts of show
-    all_broadcast_jsons = get_all_broadcasts(SHOW)
+    all_broadcasts = get_all_broadcasts(SHOW)
 
-    if not all_broadcast_jsons:
+    if not all_broadcasts:
         print(f"No broadcasts for '{SHOW}' found.", file=sys.stderr)
         sys.exit()
 
     if ONLY_NEWEST:
-        all_broadcast_jsons = [ all_broadcast_jsons[0] ]
+        all_broadcasts = [ all_broadcasts[0] ]
 
     # Process all matching broadcasts
-    for broadcast_json in all_broadcast_jsons:
+    for broadcast in all_broadcasts:
+
+        broadcast_duration = broadcast['duration']
 
         # Create final filename
-        filepath = os.path.join(DESTDIR, create_filename(broadcast_json))
+        filepath = os.path.join(DESTDIR, create_filename(broadcast))
 
         # Skip this broadcast if file already exists
         if os.path.isfile(filepath) and os.path.getsize(filepath)>0:
@@ -544,13 +561,13 @@ def main():
             continue
 
         # Get chapters
-        chapters = get_chapters(broadcast_json)
+        chapters = get_chapters(broadcast)
 
         # Get markers with recommended audio sections to keep
         if IGNORE_KEEPMARKS:
-            keepmarks = [ [0, broadcast_json['end'] - broadcast_json['start']] ]
+            keepmarks = [ [0, broadcast_duration] ]
         else:
-            keepmarks = get_keepmarks(broadcast_json)
+            keepmarks = get_keepmarks(broadcast)
 
         # Remove unwanted chapters from keepmarks and from list of chapters
         if CUT_CHAPTER_TYPES:
@@ -561,24 +578,23 @@ def main():
             chapters = [ c for c in chapters if c['type'] not in CUT_CHAPTER_TYPES ]
 
         # Realign chapters with keepmarks unless there's only a single keepmark spanning the whole broadcast
-        if not keepmarks == [ [0, broadcast_json['end'] - broadcast_json['start']] ]:
+        if not keepmarks == [ [0, broadcast['duration']] ]:
             chapters = align_chapters_to_keepmarks(chapters, keepmarks)
 
         # Download broadcast's audio
         # Note: Downloading only the required audio parts (and merging them)
         #       works, but ORF's server does not deliver perfectly cut parts
-        #       leading to inaccurate chapter marks, and sometimes even hangs.
+        #       leading to inaccurate chapter marks, and sometimes even hang during downloads.
         #       So let's download the whole brodcast and remove the parts
         #       that are not needed afterwards.
-        loopStreamId = broadcast_json['streams'][0]['loopStreamId']
-        url = STATION_INFO['shoutcast_base_url'] % loopStreamId
+        url = re.sub(r'{.*$', '', broadcast['streams'][0]['uriTemplates']['progressive'])
         broadcast_audio = download_audio(url)
         if not broadcast_audio:
-            # download failed. try next broadcast
+            # Download failed. Try next broadcast
             continue
 
         # Cut audio data with PyAV unless there's only one keepmark, spanning whole broadcast
-        if keepmarks != [ [0, broadcast_json['end'] - broadcast_json['start']] ]:
+        if keepmarks != [ [0, broadcast_duration] ]:
             broadcast_audio = cut_audio(broadcast_audio, keepmarks)
 
         # Save audio data to file
@@ -586,7 +602,7 @@ def main():
             output_file.write(broadcast_audio)
 
         # Set id3 tags
-        set_id3_tags(filepath + '.temp', chapters, keepmarks, broadcast_json)
+        set_id3_tags(filepath + '.temp', chapters, keepmarks, broadcast)
 
         # Rename temporary mp3 file to final filename
         os.rename(filepath + '.temp', filepath)
