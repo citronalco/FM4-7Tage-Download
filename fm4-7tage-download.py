@@ -385,7 +385,7 @@ def get_image(images_list):
         return None
 
     # get biggest (usually 600px width) image
-    for image_version in sorted(images_list[0]['versions'], key=lambda x: x['width']):
+    for image_version in sorted(images_list[0]['versions'], key=lambda x: x['width'], reverse=True):
         try:
             response = requests.get(image_version['path'], timeout=5)
             if response.status_code == 200:
