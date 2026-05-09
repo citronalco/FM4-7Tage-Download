@@ -1,13 +1,13 @@
 # FM4 7-Tage Download
 
-Command line script to downloads recordings from FM4's Player.
+Simple Python command line script to downloads recordings from FM4's Player.
 
 ## Description
 The Austrian radio station FM4 publishes recordings of all shows on its website - but only for seven days.
-This Python 3 command line script downloads currently available recordings of a show, so you can keep them longer.
+This Python command line script downloads currently available recordings of a show, so you can keep them longer.
 
 The show's metadata, like playlist and cover images, gets stored in the downloaded files' ID3 tags (see below).
-Optionally, sections like advertisements, news etc. are removed automatically.
+Unwanted sections like advertisements, news etc. can be removed automatically.
 Audio is not reencoded, so there is no loss in quality.
 Recordings are saved in MP3 format.
 
@@ -17,10 +17,12 @@ Be patient, FM4 throttles downloads quite heavily!
 
 ## Requirements
 Python 3 with modules "mutagen", "requests" and, optionally, "av".
+
 (On Debian/Ubuntu/Mint: `sudo apt install python3 python3-mutagen python3-requests python3-av`)
 
-If the "av" Python module is installed, this script can cut broadcasts in the same way as it gets played in [FM4's Player](https://fm4.orf.at/player) (usually News at the beginning are removed). Additionally, it is able to remove advertisements, news, jingles, etc.
-Without the "av" Python module, this script saves the whole broadcast.
+If the "av" Python module is installed, this script by default cuts broadcasts the same way as they get played in [FM4's Player](https://fm4.orf.at/programm/kalender) (usually news get removed).
+Optionally it can remove unwanted content like advertisements, news, jingles, etc.
+Without the "av" Python module, this script always saves the whole broadcast.
 
 ## Usage
 ```
@@ -42,6 +44,7 @@ options:
                  Typically News are removed/skipped this way
 -n, --newest     Download newest broadcast only (default: False)
 ```
+
 ### Examples
 **Simple:**
 
@@ -56,13 +59,12 @@ Download all available broadcast of "*Morning Show*", cut them in the same way a
 Download only the newest broadcast of "*Morning Show*" and save it with filled out ID3 tags into "*Downloads/Morning-Show-Recordings"*.
 FM4's recommendations for cuts are ignored, and all News and advertisements get removed.
 
-
 ## ID3 Tags
-This script not only downloads the recordings, but also automatically extracts all metadata provided by FM4 and saves it in appropriate ID3v2.3 tags of the downloaded MP3 files.
+This script not only downloads the recordings, but also automatically extracts most metadata provided by FM4 and saves it in appropriate ID3v2.3 tags of the downloaded MP3 files.
 The tracklist with its cover images gets translated into ID3 chapters.
 
 Unfortunately, most generic media players only support basic ID3 tags. Your chances are much higher with Podcast players.
-Here's a simple MP3 player with proper support for chapters: https://mp3chapters.github.io/player/
+Here's a simple web based MP3 player with proper support for chapters: https://mp3chapters.github.io/player/
 
 **Example:**
 
