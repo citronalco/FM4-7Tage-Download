@@ -403,9 +403,11 @@ def get_image(images_list):
             if response.status_code == 200:
                 return {
                     'data': response.content,
-                    'mime': response.headers['content-type']
+                    'mime': response.headers['content-type'],
+                    'description': images_list[0].get('alt') or images_list[0].get('text'),
                 }
         except:
+            # Try to get lower resolution image
             continue
     return None
 
@@ -441,14 +443,14 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast):
     tags.add(TRSN(text=[STATION_INFO['name']]))                           # Internet radio station name
     tags.add(TRSO(text=['ORF']))                                          # Internet radio station owner
     try:
-        tags.add(WOAS(url=broadcast['link']['url']))                 # Official audio source webpage
+        tags.add(WOAS(url=broadcast['link']['url']))                      # Official audio source webpage
     except (KeyError, TypeError):
         pass
     tags.add(WORS(url=STATION_INFO['website']))                           # Official Internet radio station homepage
     tags.add(TCON(text=["Radio Recording"]))                              # Content Description
 
     tags.add(TPE1(text=[strip_html(STATION_INFO['name'])]))               # Lead performer(s)/Soloist(s) -> "FM4"
-    tags.add(TALB(text=[strip_html(broadcast['title'])]))            # Album/Movie/Show title
+    tags.add(TALB(text=[strip_html(broadcast['title'])]))                 # Album/Movie/Show title
     tags.add(TRCK(text=["1/1"]))                                          # Track number/Position in set
     tags.add(TIT2(text=[broadcast_datetime.astimezone().strftime("%Y-%m-%d %H:%M")]))   # Title/songname/content description
 
@@ -458,13 +460,14 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast):
     tags.add(TDAT(text=[broadcast_datetime.astimezone().strftime("%d%m")]))            # Day and month of broadcast
     tags.add(TIME(text=[broadcast_datetime.astimezone().strftime("%H%M")]))            # Time of broadcast
 
-    tags.add(TLEN(text=[int(broadcast_duration)]))                 # Duration in ms
+    tags.add(TLEN(text=[int(broadcast_duration)]))                        # Duration in ms
 
     # Try to download and add cover image
     image = get_image(broadcast.get('images'))
     if image:
         tags.add(APIC(
             type=PictureType.COVER_FRONT,
+            desc=image['description'],
             mime=image['mime'],
             data=image['data']
         ))
@@ -484,6 +487,7 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast):
         if chapter_image:
             sub_frames.append(APIC(
                 type=PictureType.OTHER,
+                desc=chapter_image['description'],
                 mime=chapter_image['mime'],
                 data=chapter_image['data']
             ))
