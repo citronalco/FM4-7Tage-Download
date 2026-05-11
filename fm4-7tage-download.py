@@ -412,6 +412,15 @@ def get_image(images_list):
     return None
 
 
+def get_genres(broadcast):
+    """
+    Retrieve list of genres from broadcast JSON's "orfcategories" entry
+    "categories" in "orfcategories" are either a string, or a key-value tuple
+    """
+
+    return [ i['categories'][-1] for i in broadcast['orfcategories'] ]
+
+
 def set_id3_tags(filepath, chapters, keepmarks, broadcast):
     """
     Set id3 tags on mp3 file
@@ -422,6 +431,8 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast):
 
     # Create datetime object from broadcast's start time
     broadcast_datetime = datetime.fromisoformat(broadcast['start'])
+
+    broadcast_genres = ["Radio Recording"] + get_genres(broadcast)
 
     # Create sensible broadcast description
     broadcast_description = "\n".join(filter(None, map(strip_html, [
@@ -447,7 +458,7 @@ def set_id3_tags(filepath, chapters, keepmarks, broadcast):
     except (KeyError, TypeError):
         pass
     tags.add(WORS(url=STATION_INFO['website']))                           # Official Internet radio station homepage
-    tags.add(TCON(text=["Radio Recording"]))                              # Content Description
+    tags.add(TCON(text=broadcast_genres))                                 # Content Description
 
     tags.add(TPE1(text=[strip_html(STATION_INFO['name'])]))               # Lead performer(s)/Soloist(s) -> "FM4"
     tags.add(TALB(text=[strip_html(broadcast['title'])]))                 # Album/Movie/Show title
